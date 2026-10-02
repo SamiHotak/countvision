@@ -1,0 +1,43 @@
+# CountVision edge agent - example for an IP camera (RTSP) and an exported model.
+#
+#   Windows PowerShell:
+#     $env:CAM1_RTSP_URL = "rtsp://user:password@192.168.1.20:554/stream1"
+#     countvision-edge run --config configs/example_rtsp_onnx.yaml
+#
+# The password stays in the environment variable. It is never written to this file or to the log.
+
+data_dir: data
+
+detector:
+  type: openvino          # or: onnx. Both read an exported .onnx file.
+  model: models/model.onnx
+  model_license: "Apache-2.0 (RF-DETR export)"   # REQUIRED to be honest about the licence.
+                                                  # A model exported from YOLO weights is AGPL-3.0.
+  # decoder: auto         # auto | yolo | yolo_e2e | detr  (auto reads the output shape)
+  # names: coco91         # RF-DETR uses COCO91 ids. YOLO uses coco80 (the default guess by size).
+  conf: 0.3
+  device: auto            # OpenVINO: auto/cpu = Intel CPU, GPU = Intel iGPU
+
+cameras:
+  - id: street
+    name: Street camera
+    source:
+      uri: ${CAM1_RTSP_URL}
+      rtsp_transport: tcp
+      reconnect:
+        initial_s: 1
+        max_s: 15         # back online within ~15 s plus connect time after the camera returns
+    classes: [car, truck, bus, motorcycle]
+    coordinates: pixel    # pixel values are also possible
+    lines:
+      - name: road
+        p1: [100, 400]
+        p2: [1100, 400]
+        in_direction: to_right
+        classes: [car, truck, bus]
+    speed:                # optional: two points that are 6 m apart on the road
+      p1: [300, 600]
+      p2: [300, 300]
+      distance_m: 6
+    scheduler:
+      target_fps: 15

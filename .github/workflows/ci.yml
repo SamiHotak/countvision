@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  edge:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: edge/pyproject.toml
+      - name: System libraries for OpenCV
+        run: sudo apt-get update && sudo apt-get install -y libgl1
+      - name: Install (CPU only, no GPU, no model downloads)
+        run: pip install -e "edge[dev]"
+      - name: Lint
+        run: ruff check edge
+      - name: Tests (synthetic video, fake detector)
+        run: python -m pytest edge/tests -q

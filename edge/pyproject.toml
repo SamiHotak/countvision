@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "countvision-edge"
+version = "0.1.0"
+description = "CountVision edge agent: turns camera streams into visitor and traffic numbers. No video leaves the device."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python>=4.8",
+    "supervision>=0.26",
+    "trackers>=2.6,<3",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+# Detector runtimes. Install only what you use.
+yolo = ["ultralytics>=8.3"]          # AGPL-3.0 code and weights
+rfdetr = ["rfdetr"]                  # Apache-2.0 code and weights (PyTorch)
+onnx = ["onnxruntime>=1.18"]         # run exported .onnx models on CPU (or CUDA with onnxruntime-gpu)
+openvino = ["openvino>=2024.0"]      # run exported models on Intel CPU / iGPU
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+    "onnx>=1.16",
+    "onnxruntime>=1.18",
+]
+
+[project.scripts]
+countvision-edge = "countvision_edge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["countvision_edge*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
