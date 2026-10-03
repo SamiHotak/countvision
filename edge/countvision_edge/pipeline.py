@@ -94,6 +94,8 @@ class CameraPipeline:
         self._last_purge = 0.0
         self._is_live = cam.source.is_live
         self._finished = False
+        self._pending_cam: CameraConfig | None = None
+        self._cam_lock = threading.Lock()
         self.frames_read = 0
         self.events_total = 0
 
@@ -115,9 +117,46 @@ class CameraPipeline:
 
     # -- one frame ----------------------------------------------------------------------
 
+    def reconfigure(self, cam: CameraConfig) -> None:
+        """Use new lines and zones from the next frame on. Thread-safe.
+
+        Only geometry is meant to change (lines, zones, anchor, speed). Line totals are kept
+        for lines with the same name; open zone visits are closed and written first.
+        """
+        with self._cam_lock:
+            self._pending_cam = cam
+
+    def _apply_pending(self, frame_size: tuple[int, int]) -> None:
+        with self._cam_lock:
+            cam, self._pending_cam = self._pending_cam, None
+        if cam is None:
+            return
+        old = self.engine
+        self.cam = cam
+        if old is None:
+            return
+        closed = old.finish()
+        for event in closed:
+            self.aggregator.add_event(event)
+        self.buffer.add_events(closed)
+        self.events_total += len(closed)
+        engine = AnalyticsEngine(cam, frame_size)
+        totals = {counter.name: counter.totals for counter in old.lines}
+        for counter in engine.lines:
+            if counter.name in totals:
+                counter.totals = totals[counter.name]
+        if old.heatmap is not None and engine.heatmap is not None and old.frame_size == frame_size:
+            engine.heatmap = old.heatmap
+        self.engine = engine
+        log.info(
+            "Camera %s: new geometry (%d lines, %d zones)", cam.id, len(cam.lines), len(cam.zones)
+        )
+
     def process(self, frame: Frame) -> FrameResult:
         """Run detection, tracking and analytics on one frame (no scheduling)."""
         started = time.perf_counter()
+        if self._pending_cam is not None:
+            self._apply_pending(frame.size)
         if self.engine is None:
             self.engine = AnalyticsEngine(self.cam, frame.size)
             log.info("Camera %s: analysing %dx%d frames", self.cam.id, *frame.size)

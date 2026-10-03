@@ -332,6 +332,17 @@ class SqliteBuffer:
         with self._lock:
             return [dict(row) for row in self._db.execute(sql, params).fetchall()]
 
+    def latest_ts(self, camera_id: str) -> float | None:
+        """The newest time that has data for a camera (event time or end of a minute row)."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT MAX(t) FROM ("
+                "SELECT MAX(ts) AS t FROM events WHERE camera_id = ? "
+                "UNION ALL SELECT MAX(window_start) + 60 FROM coverage WHERE camera_id = ?)",
+                (camera_id, camera_id),
+            ).fetchone()
+        return float(row[0]) if row and row[0] is not None else None
+
     def latest_heartbeat(self, camera_id: str) -> dict | None:
         with self._lock:
             row = self._db.execute(

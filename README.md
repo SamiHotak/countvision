@@ -6,16 +6,32 @@ CountVision turns a shop's existing cameras into visitor and traffic numbers.
 - **Only numbers leave the building.** No video, no pictures, no faces are stored or sent.
 - Counts are saved in a local SQLite file, in 1-minute steps.
 
+## Start (Windows, one command)
+
+```powershell
+.\start.bat            # your webcam, with the config edge\configs\local.yaml
+.\start.bat --demo     # demo video: no camera, no model
+.\start.bat --phone    # also open it on your phone in the same Wi-Fi (people blurred)
+```
+
+The first start creates `.venv` and installs everything. Then the browser opens
+`http://127.0.0.1:8000`: live picture, draw lines and zones with the mouse, big live counters,
+today's chart and CSV download.
+
 ## Status
 
-Phase 1, Session A: the edge agent (`edge/`). Web dashboard and cloud come in later sessions.
+- Phase 1, Session A: the edge agent (`edge/`): inputs, detectors, tracking, lines, zones, SQLite.
+- Phase 1, Session B: the local web app (`countvision-edge app`).
+- Cloud dashboard: later phases.
 
 ## Folders
 
 | Folder | What it is |
 |---|---|
 | `edge/` | The edge agent (Python). See `edge/README.md`. |
-| `.github/workflows/` | CI: lint and tests on every push (CPU only). |
+| `edge/countvision_edge/app/` | The local web app (FastAPI + one plain HTML/JS page). |
+| `start.bat` | Windows: install on first start, then open the local app. |
+| `.github/workflows/` | CI: lint, tests and browser tests on every push (CPU only). |
 
 ## Licence
 

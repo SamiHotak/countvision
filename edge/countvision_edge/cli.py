@@ -18,7 +18,7 @@ from .config import SourceConfig, load_config
 from .detectors import build_detector
 from .errors import CountVisionError, EndOfStream
 from .inputs import create_source
-from .inputs.live_source import open_cv_capture
+from .inputs.live_source import open_cv_capture, quiet_opencv
 from .logging_setup import setup_logging
 from .pipeline import CameraPipeline, FrameResult
 from .report import build_report, export_csv, format_report, open_existing
@@ -116,7 +116,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         f"({summary.processed_fps:.1f} FPS), {summary.frames_skipped} skipped, "
         f"{summary.frames_dropped} dropped, {summary.events} events."
     )
-    report = build_report(buffer, camera_id=cam.id)
+    report = build_report(buffer, camera_id=cam.id, line_names=[line.name for line in cam.lines])
     print(format_report(report))
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -205,6 +205,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 def cmd_probe(args: argparse.Namespace) -> int:
     """Find which webcam indexes work."""
+    quiet_opencv()
     found = 0
     for index in range(args.max_index + 1):
         cap = open_cv_capture(SourceConfig(uri=str(index), kind="webcam"))
@@ -221,6 +222,28 @@ def cmd_probe(args: argparse.Namespace) -> int:
     if not found:
         print("No webcam found. Close other apps that use the camera (Teams, Zoom) and try again.")
     return 0 if found else 1
+
+
+# ------------------------------------------------------------------------------ app
+
+
+def cmd_app(args: argparse.Namespace) -> int:
+    """Local web app: live preview, draw lines and zones, live counters, chart, CSV."""
+    from .app.main import AppOptions, run_app
+
+    return run_app(
+        AppOptions(
+            config=args.config,
+            camera=args.camera,
+            source=args.source,
+            host=args.host,
+            port=args.port,
+            open_browser=not args.no_browser,
+            preview=args.preview,
+            demo=args.demo,
+            log_level=args.log_level,
+        )
+    )
 
 
 # ------------------------------------------------------------------------------ export
@@ -290,6 +313,20 @@ def build_parser() -> argparse.ArgumentParser:
     probe = sub.add_parser("probe", help="Find working webcam indexes")
     probe.add_argument("--max-index", type=int, default=4)
     probe.set_defaults(func=cmd_probe)
+
+    app = sub.add_parser("app", help="Open the local web app (preview, draw lines, live counts)")
+    app.add_argument("--config", help="YAML config file (lines you draw are saved into it)")
+    app.add_argument("--demo", action="store_true", help="Demo with a synthetic video (no camera)")
+    app.add_argument("--camera", help="Camera id (needed if the config has several)")
+    app.add_argument("--source", help="Override the source: 0, a video file, rtsp://...")
+    app.add_argument("--host", default="127.0.0.1",
+                     help="127.0.0.1 = only this PC (default). 0.0.0.0 = also phones in your Wi-Fi")
+    app.add_argument("--port", type=int, default=8000)
+    app.add_argument("--preview", choices=["full", "blur", "off"], default="full",
+                     help="Preview picture: full, blur (people blurred) or off")
+    app.add_argument("--no-browser", action="store_true", help="Do not open the browser")
+    app.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    app.set_defaults(func=cmd_app)
 
     export = sub.add_parser("export", help="Export a YOLO model to ONNX / OpenVINO")
     export.add_argument("--model", default="yolo11n.pt")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,8 +30,14 @@ def build_report(
     camera_id: str | None = None,
     start: float | None = None,
     end: float | None = None,
+    *,
+    line_names: Iterable[str] = (),
 ) -> dict:
-    """Totals per camera, line and zone for a time range ([start, end) in UTC epoch seconds)."""
+    """Totals per camera, line and zone for a time range ([start, end) in UTC epoch seconds).
+
+    ``line_names`` (needs ``camera_id``): lines that must appear even with zero crossings, so
+    a quiet line prints "IN 0, OUT 0" instead of nothing.
+    """
     lines = buffer.query("line_counts", camera_id=camera_id, start=start, end=end)
     zones = buffer.query("zone_stats", camera_id=camera_id, start=start, end=end)
     coverage = buffer.query("coverage", camera_id=camera_id, start=start, end=end)
@@ -80,6 +87,9 @@ def build_report(
         entry["visits"] += row["visits"]
         entry["dwell_sum_s"] += row["dwell_sum_s"]
         entry["dwell_max_s"] = max(entry["dwell_max_s"], row["dwell_max_s"])
+    if camera_id is not None:
+        for name in line_names:
+            camera(camera_id)["lines"].setdefault(name, {"in": 0, "out": 0, "by_class": {}})
     for cam in cameras.values():
         for zone in cam["zones"].values():
             seconds = zone.pop("sample_s")

@@ -72,23 +72,24 @@ class VideoRecorder:
 class Annotator:
     """Draws the current analysis on a frame."""
 
-    def __init__(self, engine_getter, trail_length: int = 40) -> None:
+    def __init__(self, engine_getter, trail_length: int = 40, *, geometry: bool = True) -> None:
         self._engine_getter = engine_getter  # () -> AnalyticsEngine | None
         self._trails: dict[int, deque] = {}
         self._trail_length = trail_length
+        self.geometry = geometry  # False: boxes only (the web page draws lines and zones itself)
 
     def draw(self, result: FrameResult, fps: float | None = None) -> np.ndarray:
         image = result.frame.image.copy()
         engine: AnalyticsEngine | None = self._engine_getter()
-        if engine is not None:
+        if engine is not None and self.geometry:
             self._draw_zones(image, engine)
             self._draw_lines(image, engine)
-        self._draw_tracks(image, result)
+        self._draw_tracks(image, result, engine.cam.anchor if engine is not None else "bottom_center")
         if fps is not None:
             _label(image, f"{fps:.1f} FPS", (8, 20), TEXT)
         return image
 
-    def _draw_tracks(self, image, result: FrameResult) -> None:
+    def _draw_tracks(self, image, result: FrameResult, anchor: str = "bottom_center") -> None:
         live = set()
         for track in result.tracks:
             live.add(track.track_id)
@@ -100,7 +101,8 @@ class Annotator:
                 text += f" {track.speed_kmh:.0f}km/h"
             _label(image, text, (x1, max(14, y1)), color, 0.45)
             trail = self._trails.setdefault(track.track_id, deque(maxlen=self._trail_length))
-            trail.append(tuple(int(v) for v in track.bottom_center))
+            point = track.anchor(anchor)  # the point that is counted
+            trail.append((int(point[0]), int(point[1])))
             if len(trail) > 1:
                 cv2.polylines(image, [np.array(trail, dtype=np.int32)], False, color, 1, cv2.LINE_AA)
         for track_id in [t for t in self._trails if t not in live and len(self._trails[t]) == 0]:

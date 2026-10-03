@@ -95,7 +95,7 @@ def test_names_must_be_unique():
 def test_environment_overrides():
     cfg = parse_config(minimal(), env={"CV_DB_PATH": "/x/y.db", "CV_DATA_DIR": "/d", "CV_LOG_LEVEL": "DEBUG",
                                        "CV_DEVICE_ID": "dev-1"})
-    assert str(cfg.db_file()) == "/x/y.db" and cfg.data_dir == "/d"
+    assert cfg.db_file() == Path("/x/y.db") and cfg.data_dir == "/d"
     assert cfg.log_level == "DEBUG" and cfg.resolve_device_id() == "dev-1"
 
 

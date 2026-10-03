@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0e1820">
+  <title>CountVision</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e1820'/%3E%3Cpath d='M6 22 L26 10' stroke='%2319c3b1' stroke-width='3.5' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='12' r='3.2' fill='%23dce6ea'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 22 L26 10" /><circle cx="12" cy="12" r="3.2" /></svg>
+      <span class="wordmark">CountVision</span>
+      <span class="cam-name" id="camName"></span>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Connecting</span>
+      <span class="fps" id="statusFps"></span>
+    </div>
+    <nav class="actions">
+      <button type="button" class="btn" id="btnSource">Source</button>
+      <button type="button" class="btn" id="btnEdit">Edit lines and zones</button>
+      <div class="menu-wrap">
+        <button type="button" class="btn" id="btnExport" aria-haspopup="true" aria-expanded="false">Download</button>
+        <div class="menu" id="exportMenu" hidden>
+          <a href="/api/export.csv" download id="linkCsv">Hourly numbers (CSV)</a>
+          <a href="/api/export.zip" download id="linkZip">All data (ZIP of CSV files)</a>
+          <button type="button" id="btnReport">Show report</button>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main class="layout" id="layout">
+    <section class="watch" aria-label="Camera">
+      <div class="edit-bar" id="editBar" hidden>
+        <div class="tools" role="group" aria-label="Tools">
+          <button type="button" class="tool" data-tool="select" aria-pressed="true" title="Select and move (V)">Select</button>
+          <button type="button" class="tool" data-tool="line" aria-pressed="false" title="Draw a counting line (L)">Line</button>
+          <button type="button" class="tool" data-tool="zone" aria-pressed="false" title="Draw a zone (Z)">Zone</button>
+        </div>
+        <div class="tools" role="group" aria-label="Edit">
+          <button type="button" class="tool" id="btnUndo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button type="button" class="tool" id="btnRedo" title="Redo (Ctrl+Y)" disabled>Redo</button>
+          <button type="button" class="tool" id="btnSnap" aria-pressed="true" title="Snap to corners and straight angles (S)">Snap</button>
+        </div>
+        <div class="spacer"></div>
+        <button type="button" class="btn ghost" id="btnCancel">Cancel</button>
+        <button type="button" class="btn primary" id="btnSave">Save and count</button>
+      </div>
+      <p class="hint" id="hint" hidden></p>
+
+      <div class="stage" id="stage">
+        <img id="preview" alt="Live camera picture with tracked people and vehicles">
+        <canvas id="overlay" aria-label="Lines and zones"></canvas>
+        <div class="stage-msg" id="stageMsg">Waiting for the camera</div>
+      </div>
+
+      <section class="chart-block" aria-labelledby="chartTitle">
+        <div class="chart-head">
+          <h2 id="chartTitle">Today, per hour</h2>
+          <div class="seg" id="chartLines" role="group" aria-label="Line"></div>
+        </div>
+        <p class="readout" id="chartReadout">&nbsp;</p>
+        <svg class="chart" id="chart" role="img" aria-label="People in and out per hour"></svg>
+        <div class="legend"><span class="sw in"></span>In <span class="sw out"></span>Out</div>
+      </section>
+    </section>
+
+    <aside class="side" aria-label="Numbers">
+      <div id="numbers">
+        <div class="scope-head">
+          <h2 id="scopeTitle">Today</h2>
+          <span class="scope-sub" id="scopeSub"></span>
+        </div>
+        <div class="progress" id="progress" hidden><div class="bar" id="progressBar"></div></div>
+        <div class="done" id="videoDone" hidden>
+          <span>The video is counted.</span>
+          <button type="button" class="btn small" id="btnDoneReport">Open report</button>
+        </div>
+        <div id="lineList"></div>
+        <div id="zoneList"></div>
+        <p class="empty" id="emptyNumbers" hidden>No lines or zones yet. Choose <b>Edit lines and zones</b> and draw a line across the door.</p>
+      </div>
+
+      <div id="inspector" hidden>
+        <div class="scope-head"><h2>Lines and zones</h2></div>
+        <ul class="shape-list" id="shapeList"></ul>
+        <div class="props" id="props" hidden>
+          <label class="field">Name
+            <input type="text" id="propName" maxlength="64" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="field" id="propDirWrap">
+            <span>Crossing in the arrow direction counts as In</span>
+            <button type="button" class="btn" id="btnFlip" title="Flip direction (F)">Flip direction</button>
+          </div>
+          <label class="field" id="propKindWrap">Type
+            <select id="propKind">
+              <option value="area">Area: people inside and time spent</option>
+              <option value="queue">Queue: also counts people waiting</option>
+            </select>
+          </label>
+          <button type="button" class="btn danger" id="btnDelete" title="Delete (Del)">Delete</button>
+        </div>
+        <p class="note">A person counts when their <span id="anchorWord">feet</span> cross a line. Saving writes the lines into your config file.</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    <span>Video stays on this computer. Only numbers are saved.</span>
+    <span id="detectorInfo"></span>
+  </footer>
+
+  <dialog id="sourceDialog" aria-labelledby="sourceTitle">
+    <form method="dialog" class="dlg">
+      <h2 id="sourceTitle">What should CountVision watch?</h2>
+      <div class="opt">
+        <div>
+          <b>Camera from the config</b>
+          <p id="configSourceText">The camera in your config file.</p>
+        </div>
+        <button type="button" class="btn" id="btnUseConfig">Use it</button>
+      </div>
+      <div class="opt">
+        <div>
+          <b>Webcam</b>
+          <p>0 is usually the built-in camera, 1 a USB camera.</p>
+        </div>
+        <div class="inline">
+          <input type="number" id="webcamIndex" min="0" max="20" value="0" aria-label="Webcam number">
+          <button type="button" class="btn" id="btnUseWebcam">Start</button>
+        </div>
+      </div>
+      <div class="opt column">
+        <div>
+          <b>Count a video file</b>
+          <p>The video is counted on this computer and deleted after counting.</p>
+        </div>
+        <input type="file" id="videoFile" accept="video/*,.mp4,.mov,.avi,.mkv">
+        <label class="check"><input type="checkbox" id="videoRealtime"> Play at normal speed (slower, looks like a live camera)</label>
+        <div class="progress" id="uploadProgress" hidden><div class="bar" id="uploadBar"></div></div>
+        <button type="button" class="btn primary" id="btnUpload" disabled>Count this video</button>
+      </div>
+      <p class="error" id="sourceError" role="alert"></p>
+      <div class="dlg-foot"><button class="btn ghost" value="close">Close</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="reportDialog" aria-labelledby="reportTitle">
+    <form method="dialog" class="dlg wide">
+      <h2 id="reportTitle">Report</h2>
+      <pre id="reportText">Loading</pre>
+      <div class="dlg-foot">
+        <a class="btn" href="/api/export.csv" download>Download CSV</a>
+        <button class="btn ghost" value="close">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

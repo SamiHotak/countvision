@@ -98,3 +98,10 @@ class FileSource(FrameSource):
 
     def nominal_fps(self) -> float | None:
         return self._fps
+
+    def total_frames(self) -> int | None:
+        """Number of frames in the file as reported by the container (may be approximate)."""
+        if self._cap is None:
+            return None
+        count = float(self._cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+        return int(count) if math.isfinite(count) and count > 0 else None

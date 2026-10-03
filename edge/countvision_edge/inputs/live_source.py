@@ -7,6 +7,7 @@ build up a delay. If the stream stops, the thread reconnects with exponential ba
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import random
@@ -51,6 +52,12 @@ class Backoff:
 
     def reset(self) -> None:
         self._attempt = 0
+
+
+def quiet_opencv() -> None:
+    """Hide OpenCV's own warnings (for example when probing webcams that do not exist)."""
+    with contextlib.suppress(AttributeError):  # very old OpenCV builds have no cv2.utils.logging
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
 
 
 def fourcc_code(code: str) -> int:

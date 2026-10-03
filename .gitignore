@@ -19,3 +19,8 @@ data/
 *.avi
 .env
 .DS_Store
+# local web app
+demo_app/
+edge/configs/local*.yaml
+*.yaml.bak
+*.yaml.tmp
