@@ -1,0 +1,55 @@
+clip: one-by-one-person-detection
+video: one-by-one-person-detection.mp4
+title: One person at a time walks up to a high table, waits, and leaves to the right
+source_url: https://github.com/intel-iot-devkit/sample-videos
+download_url: https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/one-by-one-person-detection.mp4
+license: CC BY 4.0
+credit: '"one-by-one-person-detection.mp4" by Intel IoT DevKit (sample-videos), CC BY 4.0'
+split: test
+scene: clear
+tags: [indoor, counter, dwell, close-to-camera]
+labeled_by: Claude (frame sheets at 1-4 fps)
+classes: [person]
+anchor: bottom_center
+notes: >-
+  6 people, one after the other. Line "exit": moving to the right = OUT. Zone "table": the
+  person standing at the table (like a shop counter). Occupancy samples avoid the second
+  around people arriving or leaving.
+lines:
+  - {name: exit, p1: [0.8, 0.35], p2: [0.8, 1.0]}
+zones:
+  - {name: table, polygon: [[0.3, 0.45], [0.78, 0.45], [0.78, 0.97], [0.3, 0.97]]}
+crossings:
+  - {t: 19.05, line: exit, dir: out, cls: person}
+  - {t: 44.10, line: exit, dir: out, cls: person}
+  - {t: 69.00, line: exit, dir: out, cls: person}
+  - {t: 85.70, line: exit, dir: out, cls: person}
+  - {t: 118.65, line: exit, dir: out, cls: person}
+  - {t: 135.00, line: exit, dir: out, cls: person}
+occupancy:
+  - {t: 0.0, zone: table, n: 0}
+  - {t: 5.0, zone: table, n: 0}
+  - {t: 10.0, zone: table, n: 1}
+  - {t: 15.0, zone: table, n: 1}
+  - {t: 21.0, zone: table, n: 0}
+  - {t: 25.0, zone: table, n: 1}
+  - {t: 30.0, zone: table, n: 1}
+  - {t: 35.0, zone: table, n: 1}
+  - {t: 40.0, zone: table, n: 1}
+  - {t: 46.0, zone: table, n: 0}
+  - {t: 50.0, zone: table, n: 0}
+  - {t: 55.0, zone: table, n: 1}
+  - {t: 60.0, zone: table, n: 1}
+  - {t: 65.0, zone: table, n: 1}
+  - {t: 71.0, zone: table, n: 0}
+  - {t: 80.0, zone: table, n: 1}
+  - {t: 84.0, zone: table, n: 1}
+  - {t: 90.0, zone: table, n: 0}
+  - {t: 97.0, zone: table, n: 1}
+  - {t: 100.0, zone: table, n: 1}
+  - {t: 105.0, zone: table, n: 1}
+  - {t: 110.0, zone: table, n: 1}
+  - {t: 115.0, zone: table, n: 1}
+  - {t: 121.0, zone: table, n: 0}
+  - {t: 130.0, zone: table, n: 1}
+  - {t: 138.0, zone: table, n: 0}

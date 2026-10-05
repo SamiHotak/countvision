@@ -1,4 +1,4 @@
-"""Command line: run, demo, report, snapshot, probe, export."""
+"""Command line: run, demo, report, snapshot, probe, export, app, eval, bench, count-helper."""
 
 from __future__ import annotations
 
@@ -334,6 +334,10 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--imgsz", type=int, default=640)
     export.add_argument("--log-level", default="WARNING")
     export.set_defaults(func=cmd_export)
+
+    from .evaluation.commands import add_parsers
+
+    add_parsers(sub)
     return parser
 
 

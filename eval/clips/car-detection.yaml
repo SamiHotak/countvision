@@ -1,0 +1,23 @@
+clip: car-detection
+video: car-detection.mp4
+title: Wet road seen from above, cars drive up and down, two pass each other
+source_url: https://github.com/intel-iot-devkit/sample-videos
+download_url: https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/car-detection.mp4
+license: CC BY 4.0
+credit: '"car-detection.mp4" by Intel IoT DevKit (sample-videos), CC BY 4.0'
+split: test
+scene: clear
+tags: [outdoor, overhead, vehicles, wet-road, oncoming-traffic]
+labeled_by: Claude (zoomed frame sheets at 8 fps)
+classes: [car]
+anchor: center
+notes: IN = driving up (away from the bottom edge). Times = when the car centre crosses.
+lines:
+  - {name: road, p1: [0.0, 0.5], p2: [1.0, 0.5], in_direction: to_left}
+zones: []
+crossings:
+  - {t: 6.20, line: road, dir: in, cls: car}
+  - {t: 16.40, line: road, dir: out, cls: car}
+  - {t: 16.85, line: road, dir: in, cls: car}
+  - {t: 26.45, line: road, dir: out, cls: car}
+occupancy: []

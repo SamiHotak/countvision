@@ -1,0 +1,412 @@
+{
+  "kind": "eval",
+  "name": "after_onnx_yolox_s.onnx_test",
+  "created": "2026-10-03T18:45:15Z",
+  "detector": "onnx:yolox_s.onnx",
+  "license": "Apache-2.0 (YOLOX code and official weights, Megvii)",
+  "tag": "after",
+  "note": "Phase 2 A code (scheduler fix, line counting from first detection) + params tuned on tune clips",
+  "code_version": "0.3.0",
+  "split": "test",
+  "params_file": "eval/params/onnx_yolox_s.onnx.yaml",
+  "params": {
+    "conf": 0.2,
+    "track_activation_threshold": 0.5,
+    "high_conf_det_threshold": 0.5,
+    "lost_track_buffer": 30,
+    "minimum_iou_threshold": 0.1,
+    "min_track_frames": 3,
+    "class_smoothing_window": 15,
+    "deadband_px": 4.0,
+    "fps": 10.0
+  },
+  "tolerance_s": 2.0,
+  "summary": {
+    "all": {
+      "clips": 4,
+      "frames": 2960,
+      "crossings": {
+        "rows": [],
+        "true": 17,
+        "counted": 11,
+        "matched": 11,
+        "abs_error": 6,
+        "count_accuracy": 0.6470588235294117,
+        "precision": 1.0,
+        "recall": 0.6470588235294118,
+        "f1": 0.7857142857142857
+      },
+      "occupancy": {
+        "samples": 42,
+        "true_sum": 72,
+        "counted_sum": 67,
+        "abs_error_sum": 7,
+        "exact": 36,
+        "mae": 0.16666666666666666,
+        "mean_error": 0.06944444444444445,
+        "sample_error": 0.09722222222222222,
+        "exact_rate": 0.8571428571428571
+      }
+    },
+    "by_scene": {
+      "clear": {
+        "clips": 3,
+        "frames": 2305,
+        "crossings": {
+          "rows": [],
+          "true": 17,
+          "counted": 11,
+          "matched": 11,
+          "abs_error": 6,
+          "count_accuracy": 0.6470588235294117,
+          "precision": 1.0,
+          "recall": 0.6470588235294118,
+          "f1": 0.7857142857142857
+        },
+        "occupancy": {
+          "samples": 26,
+          "true_sum": 17,
+          "counted_sum": 17,
+          "abs_error_sum": 0,
+          "exact": 26,
+          "mae": 0.0,
+          "mean_error": 0.0,
+          "sample_error": 0.0,
+          "exact_rate": 1.0
+        }
+      },
+      "hard": {
+        "clips": 1,
+        "frames": 655,
+        "crossings": {
+          "rows": [],
+          "true": 0,
+          "counted": 0,
+          "matched": 0,
+          "abs_error": 0,
+          "count_accuracy": null,
+          "precision": null,
+          "recall": null,
+          "f1": null
+        },
+        "occupancy": {
+          "samples": 16,
+          "true_sum": 55,
+          "counted_sum": 50,
+          "abs_error_sum": 7,
+          "exact": 10,
+          "mae": 0.4375,
+          "mean_error": 0.09090909090909091,
+          "sample_error": 0.12727272727272726,
+          "exact_rate": 0.625
+        }
+      }
+    },
+    "by_split": {
+      "test": {
+        "clips": 4,
+        "frames": 2960,
+        "crossings": {
+          "rows": [],
+          "true": 17,
+          "counted": 11,
+          "matched": 11,
+          "abs_error": 6,
+          "count_accuracy": 0.6470588235294117,
+          "precision": 1.0,
+          "recall": 0.6470588235294118,
+          "f1": 0.7857142857142857
+        },
+        "occupancy": {
+          "samples": 42,
+          "true_sum": 72,
+          "counted_sum": 67,
+          "abs_error_sum": 7,
+          "exact": 36,
+          "mae": 0.16666666666666666,
+          "mean_error": 0.06944444444444445,
+          "sample_error": 0.09722222222222222,
+          "exact_rate": 0.8571428571428571
+        }
+      }
+    }
+  },
+  "clips": [
+    {
+      "clip": "car-detection",
+      "split": "test",
+      "scene": "clear",
+      "detector": "onnx:yolox_s.onnx",
+      "params": {
+        "conf": 0.2,
+        "track_activation_threshold": 0.5,
+        "high_conf_det_threshold": 0.5,
+        "lost_track_buffer": 30,
+        "minimum_iou_threshold": 0.1,
+        "min_track_frames": 3,
+        "class_smoothing_window": 15,
+        "deadband_px": 4.0,
+        "fps": 10.0
+      },
+      "frames_processed": 301,
+      "duration_s": 30.16,
+      "crossings": {
+        "rows": [
+          {
+            "line": "road",
+            "dir": "in",
+            "cls": "car",
+            "true": 2,
+            "counted": 1,
+            "matched": 1
+          },
+          {
+            "line": "road",
+            "dir": "out",
+            "cls": "car",
+            "true": 2,
+            "counted": 1,
+            "matched": 1
+          }
+        ],
+        "true": 4,
+        "counted": 2,
+        "matched": 2,
+        "abs_error": 2,
+        "count_accuracy": 0.5,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      "occupancy": {
+        "samples": 0,
+        "true_sum": 0,
+        "counted_sum": 0,
+        "abs_error_sum": 0,
+        "exact": 0,
+        "mae": null,
+        "mean_error": null,
+        "sample_error": null,
+        "exact_rate": null
+      },
+      "counted_events": [
+        {
+          "t": 16.960000038146973,
+          "line": "road",
+          "dir": "in",
+          "cls": "car"
+        },
+        {
+          "t": 27.359999895095825,
+          "line": "road",
+          "dir": "out",
+          "cls": "car"
+        }
+      ],
+      "detect_ms_mean": 137.21267841526583
+    },
+    {
+      "clip": "face-demographics-walking",
+      "split": "test",
+      "scene": "clear",
+      "detector": "onnx:yolox_s.onnx",
+      "params": {
+        "conf": 0.2,
+        "track_activation_threshold": 0.5,
+        "high_conf_det_threshold": 0.5,
+        "lost_track_buffer": 30,
+        "minimum_iou_threshold": 0.1,
+        "min_track_frames": 3,
+        "class_smoothing_window": 15,
+        "deadband_px": 4.0,
+        "fps": 10.0
+      },
+      "frames_processed": 610,
+      "duration_s": 61.0,
+      "crossings": {
+        "rows": [
+          {
+            "line": "corridor",
+            "dir": "in",
+            "cls": "person",
+            "true": 7,
+            "counted": 3,
+            "matched": 3
+          }
+        ],
+        "true": 7,
+        "counted": 3,
+        "matched": 3,
+        "abs_error": 4,
+        "count_accuracy": 0.4285714285714286,
+        "precision": 1.0,
+        "recall": 0.42857142857142855,
+        "f1": 0.6
+      },
+      "occupancy": {
+        "samples": 0,
+        "true_sum": 0,
+        "counted_sum": 0,
+        "abs_error_sum": 0,
+        "exact": 0,
+        "mae": null,
+        "mean_error": null,
+        "sample_error": null,
+        "exact_rate": null
+      },
+      "counted_events": [
+        {
+          "t": 19.416666746139526,
+          "line": "corridor",
+          "dir": "in",
+          "cls": "person"
+        },
+        {
+          "t": 36.75,
+          "line": "corridor",
+          "dir": "in",
+          "cls": "person"
+        },
+        {
+          "t": 36.916666746139526,
+          "line": "corridor",
+          "dir": "in",
+          "cls": "person"
+        }
+      ],
+      "detect_ms_mean": 135.59699364261073
+    },
+    {
+      "clip": "one-by-one-person-detection",
+      "split": "test",
+      "scene": "clear",
+      "detector": "onnx:yolox_s.onnx",
+      "params": {
+        "conf": 0.2,
+        "track_activation_threshold": 0.5,
+        "high_conf_det_threshold": 0.5,
+        "lost_track_buffer": 30,
+        "minimum_iou_threshold": 0.1,
+        "min_track_frames": 3,
+        "class_smoothing_window": 15,
+        "deadband_px": 4.0,
+        "fps": 10.0
+      },
+      "frames_processed": 1394,
+      "duration_s": 139.4,
+      "crossings": {
+        "rows": [
+          {
+            "line": "exit",
+            "dir": "out",
+            "cls": "person",
+            "true": 6,
+            "counted": 6,
+            "matched": 6
+          }
+        ],
+        "true": 6,
+        "counted": 6,
+        "matched": 6,
+        "abs_error": 0,
+        "count_accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "occupancy": {
+        "samples": 26,
+        "true_sum": 17,
+        "counted_sum": 17,
+        "abs_error_sum": 0,
+        "exact": 26,
+        "mae": 0.0,
+        "mean_error": 0.0,
+        "sample_error": 0.0,
+        "exact_rate": 1.0
+      },
+      "counted_events": [
+        {
+          "t": 19.09999990463257,
+          "line": "exit",
+          "dir": "out",
+          "cls": "person"
+        },
+        {
+          "t": 44.0,
+          "line": "exit",
+          "dir": "out",
+          "cls": "person"
+        },
+        {
+          "t": 69.09999990463257,
+          "line": "exit",
+          "dir": "out",
+          "cls": "person"
+        },
+        {
+          "t": 85.90000009536743,
+          "line": "exit",
+          "dir": "out",
+          "cls": "person"
+        },
+        {
+          "t": 118.90000009536743,
+          "line": "exit",
+          "dir": "out",
+          "cls": "person"
+        },
+        {
+          "t": 135.09999990463257,
+          "line": "exit",
+          "dir": "out",
+          "cls": "person"
+        }
+      ],
+      "detect_ms_mean": 134.6922318472045
+    },
+    {
+      "clip": "store-aisle-detection",
+      "split": "test",
+      "scene": "hard",
+      "detector": "onnx:yolox_s.onnx",
+      "params": {
+        "conf": 0.2,
+        "track_activation_threshold": 0.5,
+        "high_conf_det_threshold": 0.5,
+        "lost_track_buffer": 30,
+        "minimum_iou_threshold": 0.1,
+        "min_track_frames": 3,
+        "class_smoothing_window": 15,
+        "deadband_px": 4.0,
+        "fps": 10.0
+      },
+      "frames_processed": 655,
+      "duration_s": 65.42,
+      "crossings": {
+        "rows": [],
+        "true": 0,
+        "counted": 0,
+        "matched": 0,
+        "abs_error": 0,
+        "count_accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      "occupancy": {
+        "samples": 16,
+        "true_sum": 55,
+        "counted_sum": 50,
+        "abs_error_sum": 7,
+        "exact": 10,
+        "mae": 0.4375,
+        "mean_error": 0.09090909090909091,
+        "sample_error": 0.12727272727272726,
+        "exact_rate": 0.625
+      },
+      "counted_events": [],
+      "detect_ms_mean": 135.4934879740422
+    }
+  ]
+}

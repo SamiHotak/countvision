@@ -62,6 +62,11 @@ listens on this PC (127.0.0.1).
 | `countvision-edge run --config configs/example.yaml --show` | Count live without the web app; `--show` opens a preview window |
 | `countvision-edge report --db data/countvision.db` | Print the counts (`--json`, `--csv-dir`) |
 | `countvision-edge export --model yolo11n.pt --format openvino` | Convert a YOLO model for faster CPU use (result stays AGPL) |
+| `countvision-edge count-helper VIDEO` | Label the true counts of a video by hand (window, keys I/O/0-9) |
+| `countvision-edge eval fetch / tune / run / report` | Accuracy on hand-labeled clips, tuning on tune clips only, `eval/results.md` |
+| `countvision-edge bench --model onnx:yolox_tiny.onnx` | Speed of detector x runtime x input size on this PC |
+
+Evaluation details and results: `eval/README.md` and `eval/results.md`.
 
 Use `--help` on any command.
 
@@ -78,6 +83,7 @@ Secrets such as camera passwords go in environment variables: `${CAM1_RTSP_URL}`
 | `ultralytics` | `edge[yolo]` | AGPL-3.0 (code and weights) |
 | `rfdetr` | `edge[rfdetr]` | Apache-2.0 for standard checkpoints |
 | `onnx` / `openvino` | a model file | the licence of that model (set `model_license`) |
+| `onnx` + YOLOX file | `edge[onnx]`, e.g. `yolox_tiny.onnx` | **Apache-2.0** (code and weights). Recommended default, see `eval/results.md` |
 | `blobs` | nothing | demo only |
 
 Models exported from YOLO weights stay AGPL. The licence is logged at start.
@@ -94,7 +100,11 @@ The web app's live picture is made in memory only while a browser is watching, a
 - One camera per process (several cameras: Phase 2 Session B). The web app shows one camera.
 - The web app has no login. Keep it on 127.0.0.1, or use the key link with `--host 0.0.0.0`.
 - Real RTSP and real webcam were tested with fakes only in CI. Please test your own camera.
-- The RF-DETR wrapper is untested without weights.
+- The RF-DETR wrapper is untested without weights (measured on Colab with `eval/colab/`).
+- COCO models do not recognise cars filmed from straight above (they see "cell phone"). Mount
+  vehicle cameras at an angle.
+- A line needs about 1.5 m of visible path on both sides. People who appear right on the line
+  (from behind a wall or door) are often not counted.
 
 ## Tests
 

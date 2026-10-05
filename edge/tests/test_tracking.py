@@ -84,3 +84,27 @@ def test_reset_clears_state():
         tm.update(det([box(10 + 3 * i)], [0.9], [0]), i / 15, i / 15)
     tm.reset()
     assert tm.update(det([box(10)], [0.9], [0]), 10.0, 10.0) == []  # new track, not confirmed yet
+
+
+def test_first_box_is_the_very_first_detection():
+    # ByteTrack gives a new track its id one frame late. The manager remembers the box of
+    # that first frame, so line counting can start from the real first position.
+    tm = manager(min_track_frames=1)
+    reported = []
+    for i in range(4):
+        reported += tm.update(det([box(10 + 20 * i)], [0.9], [0]), i / 15, i / 15)
+    assert reported
+    assert reported[0].first_xyxy == tuple(float(v) for v in box(10))
+    assert reported[0].first_anchor("center") == (25.0, 135.0)
+
+
+def test_best_overlap_picks_the_matching_box():
+    import numpy as np
+
+    from countvision_edge.tracking import _best_overlap
+
+    current = np.array([100, 100, 130, 170], dtype=np.float32)
+    candidates = np.array([[0, 0, 30, 70], [95, 98, 125, 168]], dtype=np.float32)
+    assert _best_overlap(current, candidates).tolist() == [95, 98, 125, 168]
+    assert _best_overlap(current, candidates[:1]).tolist() == current.tolist()  # no overlap
+    assert _best_overlap(current, np.zeros((0, 4), np.float32)) is current

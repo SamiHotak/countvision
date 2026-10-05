@@ -1,0 +1,31 @@
+clip: face-demographics-walking
+video: face-demographics-walking.mp4
+title: Corridor, people walk straight towards a camera at chest height (groups side by side)
+source_url: https://github.com/intel-iot-devkit/sample-videos
+download_url: https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/face-demographics-walking.mp4
+license: CC BY 4.0
+credit: '"face-demographics-walking.mp4" by Intel IoT DevKit (sample-videos), CC BY 4.0'
+split: test
+scene: clear
+tags: [indoor, corridor, low-camera, walking-towards-camera, groups]
+labeled_by: Claude (zoomed frame sheets at 4 fps, checked twice)
+classes: [person]
+anchor: bottom_center
+notes: >-
+  IN = walking towards the camera (down across the floor line). A group of three crosses
+  within one second at 37 s, partly hidden behind each other. Most people come out from
+  behind the wall on the right already close to the line. Label times were corrected once
+  after a second, more zoomed look at the frames (the first pass misread the feet by 0.5-1.5
+  s). The counts (7 IN) did not change.
+lines:
+  - {name: corridor, p1: [0.0, 0.9], p2: [1.0, 0.9]}
+zones: []
+crossings:
+  - {t: 2.60, line: corridor, dir: in, cls: person}
+  - {t: 19.45, line: corridor, dir: in, cls: person}
+  - {t: 19.70, line: corridor, dir: in, cls: person}
+  - {t: 37.00, line: corridor, dir: in, cls: person}
+  - {t: 37.10, line: corridor, dir: in, cls: person}
+  - {t: 37.50, line: corridor, dir: in, cls: person}
+  - {t: 53.00, line: corridor, dir: in, cls: person}
+occupancy: []

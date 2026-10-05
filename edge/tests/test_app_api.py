@@ -55,10 +55,11 @@ def test_timeline_report_and_exports(client):
     assert "attachment" in csv_response.headers["content-disposition"]
     text = csv_response.content.decode("utf-8-sig")
     assert text.splitlines()[0].startswith("date,hour,camera,type,name,in,out")
-    assert ",line,entrance,4,2," in text
+    # Sum the hours: the 18 s demo can run across a full hour (the test was flaky at hh:59).
+    assert _sum_line(text, ",", "entrance") == (4, 2)
 
     semicolon = client.get("/api/export.csv", params={"delimiter": ";"}).content.decode("utf-8-sig")
-    assert ";line;entrance;4;2;" in semicolon
+    assert _sum_line(semicolon, ";", "entrance") == (4, 2)
     assert client.get("/api/export.csv", params={"delimiter": "|"}).status_code == 422
 
     archive = zipfile.ZipFile(io.BytesIO(client.get("/api/export.zip").content))
@@ -177,3 +178,11 @@ def test_preview_jpeg_while_running(app_config, runner):
         assert response.headers["content-type"] == "image/jpeg"
         assert response.content[:2] == b"\xff\xd8"
         assert test_client.post("/api/stop", headers=WRITE).json()["run"]["state"] == "stopped"
+
+
+def _sum_line(text: str, sep: str, name: str) -> tuple[int, int]:
+    """IN and OUT of one line, summed over all hourly rows of the CSV export."""
+    rows = [r.split(sep) for r in text.splitlines()[1:]]
+    hits = [r for r in rows if len(r) > 6 and r[3] == "line" and r[4] == name]
+    assert hits, text
+    return sum(int(r[5]) for r in hits), sum(int(r[6]) for r in hits)

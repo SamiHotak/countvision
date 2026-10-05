@@ -26,6 +26,7 @@ _STATE_TTL_S = 30.0
 class _TrackState:
     first_ts: float
     last_ts: float
+    first_xyxy: tuple[float, float, float, float] | None = None
     hits: int = 0
     votes: deque = field(default_factory=deque)  # (class_id, confidence)
 
@@ -39,6 +40,9 @@ class TrackManager:
         self._frame_rate = frame_rate
         self._states: dict[int, _TrackState] = {}
         self._tracker = self._new_tracker()
+        # Boxes of the previous frame that ByteTrack did not give an id yet (a new track
+        # gets its id one frame later). Used to find where a new track really started.
+        self._unassigned: np.ndarray = np.zeros((0, 4), dtype=np.float32)
 
     def _new_tracker(self) -> ByteTrackTracker:
         return ByteTrackTracker(
@@ -53,6 +57,7 @@ class TrackManager:
     def reset(self) -> None:
         self._states.clear()
         self._tracker = self._new_tracker()
+        self._unassigned = np.zeros((0, 4), dtype=np.float32)
 
     def update(self, detections: Detections, media_ts: float, ts: float) -> list[TrackedObject]:
         """Feed one frame of detections. ``media_ts`` is stream time, ``ts`` absolute time."""
@@ -63,16 +68,22 @@ class TrackManager:
         )
         out = self._tracker.update(sv_det, timestamp=media_ts)
         tracked: list[TrackedObject] = []
+        previous_unassigned, unassigned = self._unassigned, []
         if out.tracker_id is not None and len(out) > 0:
             conf = out.confidence if out.confidence is not None else np.ones(len(out))
             class_ids = out.class_id if out.class_id is not None else np.zeros(len(out), dtype=int)
             for i in range(len(out)):
                 track_id = int(out.tracker_id[i])
                 if track_id < 0:
+                    unassigned.append(out.xyxy[i])
                     continue
                 state = self._states.get(track_id)
                 if state is None:
-                    state = _TrackState(first_ts=ts, last_ts=ts)
+                    first = _best_overlap(out.xyxy[i], previous_unassigned)
+                    state = _TrackState(
+                        first_ts=ts, last_ts=ts,
+                        first_xyxy=tuple(float(v) for v in first),  # type: ignore[arg-type]
+                    )
                     state.votes = deque(maxlen=self.cfg.class_smoothing_window)
                     self._states[track_id] = state
                 state.hits += 1
@@ -90,8 +101,13 @@ class TrackManager:
                         confidence=float(conf[i]),
                         hits=state.hits,
                         age_s=ts - state.first_ts,
+                        first_xyxy=state.first_xyxy,
                     )
                 )
+        self._unassigned = (
+            np.asarray(unassigned, dtype=np.float32).reshape(-1, 4) if unassigned
+            else np.zeros((0, 4), dtype=np.float32)
+        )
         self._prune(ts)
         tracked.sort(key=lambda t: t.track_id)
         return tracked
@@ -112,3 +128,19 @@ class TrackManager:
         stale = [tid for tid, s in self._states.items() if ts - s.last_ts > _STATE_TTL_S]
         for tid in stale:
             del self._states[tid]
+
+
+def _best_overlap(box: np.ndarray, candidates: np.ndarray, min_iou: float = 0.2) -> np.ndarray:
+    """The candidate box with the highest IoU to ``box`` (at least ``min_iou``), else ``box``."""
+    if len(candidates) == 0:
+        return box
+    x1 = np.maximum(box[0], candidates[:, 0])
+    y1 = np.maximum(box[1], candidates[:, 1])
+    x2 = np.minimum(box[2], candidates[:, 2])
+    y2 = np.minimum(box[3], candidates[:, 3])
+    inter = np.clip(x2 - x1, 0, None) * np.clip(y2 - y1, 0, None)
+    area = (box[2] - box[0]) * (box[3] - box[1])
+    areas = (candidates[:, 2] - candidates[:, 0]) * (candidates[:, 3] - candidates[:, 1])
+    iou = inter / np.maximum(area + areas - inter, 1e-9)
+    best = int(np.argmax(iou))
+    return candidates[best] if iou[best] >= min_iou else box

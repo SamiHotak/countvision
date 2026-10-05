@@ -102,6 +102,7 @@ class DetectorConfig(_Model):
                    Also loads exported models: .onnx, *_openvino_model/, .engine
       rfdetr       RF-DETR via the rfdetr package. Apache-2.0 code and weights (PyTorch).
       onnx         Any exported .onnx model through ONNX Runtime (CPU, or CUDA with onnxruntime-gpu).
+                   Also the official YOLOX .onnx files (Apache-2.0 code AND weights), decoder yolox.
       openvino     Any exported .onnx or .xml model through OpenVINO (Intel CPU / iGPU).
       blobs        Colour-blob detector for the synthetic demo and tests. Needs no model.
 
@@ -116,8 +117,8 @@ class DetectorConfig(_Model):
     iou: float = Field(0.5, gt=0, le=1)  # NMS threshold (YOLO only)
     device: str = "auto"  # auto | cpu | cuda | cuda:0 | GPU (OpenVINO iGPU)
     classes: list[str] | None = None  # optional detector-side filter, by class name
-    decoder: Literal["auto", "yolo", "yolo_e2e", "detr"] = "auto"  # onnx / openvino only
-    normalize: Literal["auto", "none", "imagenet"] = "auto"  # onnx / openvino, detr only
+    decoder: Literal["auto", "yolo", "yolo_e2e", "yolox", "detr"] = "auto"  # onnx / openvino only
+    normalize: Literal["auto", "none", "imagenet", "raw"] = "auto"  # onnx / openvino only
     names: list[str] | Literal["coco80", "coco91"] | None = None  # class names for exports
     model_license: str | None = None
     rfdetr_variant: Literal["nano", "small", "medium", "base", "large"] = "small"

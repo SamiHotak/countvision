@@ -52,3 +52,27 @@ def test_a_late_burst_does_not_cause_catch_up():
     assert s.should_process(0.0)
     assert s.should_process(5.0)  # long gap
     assert not s.should_process(5.01)  # no burst afterwards
+
+
+@pytest.mark.parametrize(("source_fps", "target", "expected"), [
+    (12.0, 10.0, 10.0),   # was 6 FPS before phase 2 A
+    (12.5, 10.0, 10.0),
+    (25.0, 10.0, 10.0),   # was 8.3 FPS before
+    (30.0, 15.0, 15.0),
+    (59.94, 10.0, 10.0),
+    (8.0, 10.0, 8.0),     # slower source: every frame
+])
+def test_effective_rate_matches_the_target(source_fps, target, expected):
+    s = FrameScheduler(target, adaptive=False)
+    seconds = 30
+    taken = sum(s.should_process(i / source_fps) for i in range(int(seconds * source_fps)))
+    assert taken / seconds == pytest.approx(expected, rel=0.04)
+
+
+def test_rhythm_restarts_after_a_long_gap():
+    s = FrameScheduler(10.0, adaptive=False)
+    for i in range(10):
+        s.should_process(i / 25)
+    assert s.should_process(100.0)
+    assert not s.should_process(100.04)
+    assert s.should_process(100.1)

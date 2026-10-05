@@ -77,6 +77,14 @@ class TrackedObject:
     speed_px_s: float = 0.0  # centre speed in pixels per second
     speed_bh_s: float = 0.0  # centre speed in box heights per second (scale free)
     speed_kmh: float | None = None  # only when speed calibration is configured
+    first_xyxy: tuple[float, float, float, float] | None = None  # box at the first detection
+
+    def first_anchor(self, mode: str) -> Point | None:
+        """Anchor point at the very first detection (before the track was confirmed)."""
+        if self.first_xyxy is None:
+            return None
+        x1, y1, x2, y2 = self.first_xyxy
+        return ((x1 + x2) / 2.0, y2) if mode == "bottom_center" else ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
 
     @property
     def height(self) -> float:

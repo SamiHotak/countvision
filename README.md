@@ -22,6 +22,8 @@ today's chart and CSV download.
 
 - Phase 1, Session A: the edge agent (`edge/`): inputs, detectors, tracking, lines, zones, SQLite.
 - Phase 1, Session B: the local web app (`countvision-edge app`).
+- Phase 2, Session A: evaluation on hand-labeled clips, speed benchmark, YOLOX (Apache-2.0)
+  detector. Results and recommendation: [`eval/results.md`](eval/results.md).
 - Cloud dashboard: later phases.
 
 ## Folders
@@ -31,8 +33,11 @@ today's chart and CSV download.
 | `edge/` | The edge agent (Python). See `edge/README.md`. |
 | `edge/countvision_edge/app/` | The local web app (FastAPI + one plain HTML/JS page). |
 | `start.bat` | Windows: install on first start, then open the local app. |
+| `eval/` | Hand labels, accuracy and speed results, `laptop.bat`, Colab notebook. See `eval/README.md`. |
 | `.github/workflows/` | CI: lint, tests and browser tests on every push (CPU only). |
 
 ## Licence
 
-AGPL-3.0-or-later (see `LICENSE`). The Ultralytics YOLO models are AGPL too. For a closed-source product you need a permissive model (RF-DETR, Apache-2.0) or an Ultralytics Enterprise licence. The detector is swappable on purpose.
+AGPL-3.0-or-later (see `LICENSE`). The Ultralytics YOLO models are AGPL too. For a closed-source product you need a permissive model (YOLOX or RF-DETR, Apache-2.0) or an Ultralytics Enterprise licence. The detector is swappable on purpose.
+
+Evaluation videos: Intel IoT DevKit sample videos (CC BY 4.0). YOLOX models: Megvii (Apache-2.0).

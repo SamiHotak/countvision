@@ -66,9 +66,16 @@ class LineCounter:
             distance = signed_distance(p, self.a, self.b)
             state = self._states.get(track.track_id)
             if state is None:
-                side = 0 if abs(distance) < self.deadband_px else (1 if distance > 0 else -1)
-                self._states[track.track_id] = _LineState(side, p, ts)
-                continue
+                # A track is only reported after a few frames (min_track_frames). Start from
+                # where it was FIRST detected, so a crossing during that delay still counts
+                # (fast walkers, people who appear right next to the line).
+                start = track.first_anchor(self.anchor) or p
+                d0 = signed_distance(start, self.a, self.b)
+                side = 0 if abs(d0) < self.deadband_px else (1 if d0 > 0 else -1)
+                state = _LineState(side, start, ts)
+                self._states[track.track_id] = state
+                if start == p:
+                    continue
             state.last_seen = ts
             if abs(distance) < self.deadband_px:
                 continue  # too close to the line to know the side

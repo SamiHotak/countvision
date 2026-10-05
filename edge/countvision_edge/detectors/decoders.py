@@ -6,6 +6,9 @@ Supported output layouts
             NMS is applied here.
   yolo_e2e  NMS-free YOLO export (YOLOv10, YOLO26): one output (1, N, 6) =
             x1, y1, x2, y2, score, class in network pixels.
+  yolox     Official YOLOX ONNX files (Apache-2.0): one output (1, N, 5+nc) with raw grid
+            offsets (not decoded in the model), objectness and class scores (already
+            sigmoid). N = sum over strides 8/16/32 of (H/s)*(W/s). NMS is applied here.
   detr      DETR family (RF-DETR, RT-DETR): either two outputs, boxes (1, Q, 4) and class
             logits (1, Q, nc), or one output (1, Q, 4+nc). Boxes are normalised centre x, y,
             width, height. No NMS.
@@ -132,6 +135,73 @@ def decode_yolo_e2e(
     boxes[:, [0, 2]] = (boxes[:, [0, 2]] - pad[0]) / scale
     boxes[:, [1, 3]] = (boxes[:, [1, 3]] - pad[1]) / scale
     return _finish(boxes, pred[:, 4], pred[:, 5].astype(int), orig_size[0], orig_size[1], max_det)
+
+
+YOLOX_STRIDES = (8, 16, 32)
+
+
+def yolox_anchor_count(net_size: tuple[int, int], strides: tuple[int, ...] = YOLOX_STRIDES) -> int:
+    """Number of output rows of a YOLOX model with input ``net_size`` = (width, height)."""
+    width, height = net_size
+    return sum((height // s) * (width // s) for s in strides)
+
+
+def _yolox_grids(net_size: tuple[int, int], strides: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
+    width, height = net_size
+    grids, steps = [], []
+    for stride in strides:
+        h, w = height // stride, width // stride
+        xv, yv = np.meshgrid(np.arange(w), np.arange(h))
+        grids.append(np.stack((xv, yv), axis=2).reshape(-1, 2))
+        steps.append(np.full((h * w, 1), stride))
+    return np.concatenate(grids).astype(np.float32), np.concatenate(steps).astype(np.float32)
+
+
+def decode_yolox(
+    output: np.ndarray,
+    *,
+    conf_threshold: float,
+    iou_threshold: float,
+    class_filter: set[int] | None,
+    scale: float,
+    pad: tuple[float, float],
+    orig_size: tuple[int, int],
+    net_size: tuple[int, int],
+    strides: tuple[int, ...] = YOLOX_STRIDES,
+    max_det: int = 300,
+) -> Detections:
+    """Decode an official YOLOX ONNX output. ``orig_size`` and ``net_size`` are (width, height).
+
+    If the model was exported with the grid decoding already inside (rows are pixel boxes),
+    set ``strides=()``.
+    """
+    pred = np.asarray(output, dtype=np.float32)
+    if pred.ndim == 3:
+        pred = pred[0]
+    boxes = pred[:, :4].copy()
+    if strides:
+        grids, steps = _yolox_grids(net_size, strides)
+        if len(grids) != len(pred):
+            raise ValueError(
+                f"YOLOX output has {len(pred)} rows, expected {len(grids)} for input "
+                f"{net_size[0]}x{net_size[1]}"
+            )
+        boxes[:, :2] = (boxes[:, :2] + grids) * steps
+        boxes[:, 2:4] = np.exp(np.clip(boxes[:, 2:4], -20.0, 20.0)) * steps
+    scores_all = pred[:, 4:5] * pred[:, 5:]
+    cls = scores_all.argmax(axis=1)
+    conf = scores_all[np.arange(len(pred)), cls]
+    mask = conf >= conf_threshold
+    if class_filter is not None:
+        mask &= np.isin(cls, list(class_filter))
+    if not mask.any():
+        return Detections.empty()
+    xyxy, conf, cls = _cxcywh_to_xyxy(boxes[mask]), conf[mask], cls[mask]
+    keep = batched_nms(xyxy, conf, cls, iou_threshold)[:max_det]
+    xyxy, conf, cls = xyxy[keep], conf[keep], cls[keep]
+    xyxy[:, [0, 2]] = (xyxy[:, [0, 2]] - pad[0]) / scale
+    xyxy[:, [1, 3]] = (xyxy[:, [1, 3]] - pad[1]) / scale
+    return _finish(xyxy, conf, cls, orig_size[0], orig_size[1], max_det)
 
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:

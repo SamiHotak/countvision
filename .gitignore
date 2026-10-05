@@ -24,3 +24,14 @@ demo_app/
 edge/configs/local*.yaml
 *.yaml.bak
 *.yaml.tmp
+# evaluation: videos, models and detection caches stay local (download with "eval fetch")
+eval/videos/
+eval/models/
+eval/cache/
+*.npz
+*_openvino_model/
+# camera snapshots and personal test configs never go to GitHub
+snapshot*.jpg
+snap*.jpg
+my*.yaml
+/pytest

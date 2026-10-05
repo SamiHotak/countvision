@@ -1,0 +1,26 @@
+clip: person-bicycle-car-detection
+video: person-bicycle-car-detection.mp4
+title: Parking lot seen from high above, people, a cyclist and cars, small objects
+source_url: https://github.com/intel-iot-devkit/sample-videos
+download_url: https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/person-bicycle-car-detection.mp4
+license: CC BY 4.0
+credit: '"person-bicycle-car-detection.mp4" by Intel IoT DevKit (sample-videos), CC BY 4.0'
+split: tune
+scene: hard
+tags: [outdoor, high-overhead, small-objects, multi-class, cyclists-as-distractors]
+labeled_by: Claude (frame sheets at 2-4 fps)
+classes: [person, bicycle, car]
+anchor: center
+notes: >-
+  Line "lot": IN = moving up (into the parking area). Line "top": IN = moving to the right.
+  The two cyclists never cross a line; they are there to test false counts.
+lines:
+  - {name: lot, p1: [0.0, 0.6], p2: [1.0, 0.6], in_direction: to_left}
+  - {name: top, p1: [0.3, 0.0], p2: [0.3, 0.55], in_direction: to_left}
+zones: []
+crossings:
+  - {t: 3.50, line: lot, dir: in, cls: person}
+  - {t: 16.20, line: lot, dir: in, cls: car}
+  - {t: 44.20, line: top, dir: in, cls: person}
+  - {t: 45.95, line: lot, dir: in, cls: car}
+occupancy: []

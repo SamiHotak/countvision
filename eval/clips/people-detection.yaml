@@ -1,0 +1,38 @@
+clip: people-detection
+video: people-detection.mp4
+title: Office room seen from a high corner, people walk in from below the camera
+source_url: https://github.com/intel-iot-devkit/sample-videos
+download_url: https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/people-detection.mp4
+license: CC BY 4.0
+credit: '"people-detection.mp4" by Intel IoT DevKit (sample-videos), CC BY 4.0'
+split: tune
+scene: clear
+tags: [indoor, elevated, few-people, near-line-walker]
+labeled_by: Claude (frame sheets at 4 fps)
+classes: [person]
+anchor: bottom_center
+notes: >-
+  IN = moving from screen-left to screen-right across the middle line. At 29-31 s a woman
+  walks along the right side of the line without crossing (trap for jitter).
+lines:
+  - {name: middle, p1: [0.5, 0.38], p2: [0.5, 1.0], in_direction: to_left}
+zones:
+  - {name: floor, polygon: [[0.0, 0.42], [0.93, 0.42], [1.0, 0.6], [1.0, 1.0], [0.0, 1.0]]}
+crossings:
+  - {t: 3.10, line: middle, dir: in, cls: person}
+  - {t: 16.40, line: middle, dir: out, cls: person}
+  - {t: 43.90, line: middle, dir: out, cls: person}
+occupancy:
+  - {t: 0.0, zone: floor, n: 0}
+  - {t: 3.0, zone: floor, n: 1}
+  - {t: 5.0, zone: floor, n: 1}
+  - {t: 10.0, zone: floor, n: 0}
+  - {t: 17.0, zone: floor, n: 2}
+  - {t: 18.0, zone: floor, n: 2}
+  - {t: 25.0, zone: floor, n: 0}
+  - {t: 30.0, zone: floor, n: 3}
+  - {t: 31.0, zone: floor, n: 3}
+  - {t: 35.0, zone: floor, n: 0}
+  - {t: 40.0, zone: floor, n: 0}
+  - {t: 44.5, zone: floor, n: 1}
+  - {t: 49.0, zone: floor, n: 0}

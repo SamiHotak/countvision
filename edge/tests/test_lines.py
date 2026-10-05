@@ -110,3 +110,25 @@ def test_diagonal_line_directions():
     lc.update([make_track(2, 150, 100)], 0.0)  # upper right of the line = left side
     events = lc.update([make_track(2, 100, 150)], 0.2)  # lower left = right side
     assert [e.direction for e in events] == ["in"]
+
+
+def test_crossing_during_the_confirmation_delay_still_counts():
+    # The tracker reports a track only after a few frames. If the person crossed the line in
+    # that time, the first reported position is already on the other side.
+    from dataclasses import replace
+
+    lc = counter()
+    first = make_track(1, 100, 80)  # first detection: above the line
+    later = replace(make_track(1, 100, 120), first_xyxy=first.xyxy)  # first report: below
+    events = lc.update([later], 0.6)
+    assert [e.direction for e in events] == ["in"]
+    assert lc.update([make_track(1, 100, 130)], 0.8) == []  # no second count
+
+
+def test_first_detection_on_the_same_side_counts_nothing():
+    from dataclasses import replace
+
+    lc = counter()
+    first = make_track(1, 100, 125)
+    assert lc.update([replace(make_track(1, 100, 130), first_xyxy=first.xyxy)], 0.6) == []
+    assert walk(lc, 1, 100, [140, 160], start_ts=1.0) == []

@@ -1,0 +1,38 @@
+clip: store-aisle-detection
+video: store-aisle-detection.mp4
+title: Busy shop aisle with shelves, people bend, stop and hide behind each other
+source_url: https://github.com/intel-iot-devkit/sample-videos
+download_url: https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/store-aisle-detection.mp4
+license: CC BY 4.0
+credit: '"store-aisle-detection.mp4" by Intel IoT DevKit (sample-videos), CC BY 4.0'
+split: test
+scene: hard
+tags: [indoor, shop, occlusion, crowd-small, occupancy-only]
+labeled_by: Claude (frames every 4 s)
+classes: [person]
+anchor: bottom_center
+notes: >-
+  Occupancy only: every person in the shop area, also when partly visible (a head entering
+  at the bottom, a person far away at the end of the aisle). No counting line: in this view
+  feet are hidden by the display table, so a hand label of line crossings was not reliable.
+lines: []
+zones:
+  - {name: store, polygon: [[0.0, 0.12], [1.0, 0.12], [1.0, 1.0], [0.0, 1.0]]}
+crossings: []
+occupancy:
+  - {t: 0.0, zone: store, n: 0}
+  - {t: 4.0, zone: store, n: 0}
+  - {t: 8.0, zone: store, n: 1}
+  - {t: 12.0, zone: store, n: 2}
+  - {t: 16.0, zone: store, n: 3}
+  - {t: 20.0, zone: store, n: 3}
+  - {t: 24.0, zone: store, n: 3}
+  - {t: 28.0, zone: store, n: 5}
+  - {t: 32.0, zone: store, n: 5}
+  - {t: 36.0, zone: store, n: 5}
+  - {t: 40.0, zone: store, n: 5}
+  - {t: 44.0, zone: store, n: 4}
+  - {t: 48.0, zone: store, n: 4}
+  - {t: 56.0, zone: store, n: 5}
+  - {t: 60.0, zone: store, n: 5}
+  - {t: 64.0, zone: store, n: 5}

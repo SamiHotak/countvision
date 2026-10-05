@@ -52,8 +52,15 @@ class FrameScheduler:
         interval = 1.0 / fps
         # 10% tolerance so a 30 FPS file with target 15 takes exactly every second frame.
         if self._next_ts is None or media_ts >= self._next_ts - 0.1 * interval:
-            # Anchor to the real time of this frame, never "catch up" with a burst.
-            self._next_ts = media_ts + interval
+            if self._next_ts is None or media_ts - self._next_ts >= interval:
+                # First frame, or far behind (gap, slow device): restart from this frame.
+                # Never "catch up" with a burst.
+                self._next_ts = media_ts + interval
+            else:
+                # Keep the rhythm. Anchoring to each frame's own time would round every
+                # interval UP to a whole number of source frames: a 12 FPS camera with target
+                # 10 would then get only 6 FPS analysed (fixed in phase 2 A).
+                self._next_ts += interval
             self.processed += 1
             return True
         self.skipped += 1

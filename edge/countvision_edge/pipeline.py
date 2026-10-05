@@ -111,7 +111,12 @@ class CameraPipeline:
 
     def _configure_for_source(self, source: FrameSource) -> None:
         self._status_fn = source.status
-        fps = self.scheduler.target_fps or source.nominal_fps() or 15.0
+        self.set_stream_rate(self.scheduler.target_fps or source.nominal_fps() or 15.0)
+
+    def set_stream_rate(self, fps: float) -> None:
+        """Tell the tracker how many frames per second it will get. ``run()`` does this from
+        the source; callers that feed frames to ``process()`` themselves (evaluation) call it
+        before the first frame."""
         self.tracker = self._make_tracker(fps)
         self._nominal_dt = 1.0 / fps
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "countvision-edge"
-version = "0.2.0"
+version = "0.3.0"
 description = "CountVision edge agent: turns camera streams into visitor and traffic numbers. No video leaves the device."
 readme = "README.md"
 requires-python = ">=3.10"
