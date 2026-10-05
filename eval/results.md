@@ -114,6 +114,7 @@ _before_ = Phase 1 code with default params. _after_ = current code with the par
 | after_onnx_yolox_s.onnx_test | `onnx:yolox_s.onnx` | after | test | 64.7 % | 64.7 % | – | 78.6 % | 11 / 17 | 6.9 % | 0.17 |
 | before_onnx_yolox_tiny.onnx_test | `onnx:yolox_tiny.onnx` | before | test | 47.1 % | 47.1 % | – | 64.0 % | 8 / 17 | 4.2 % | 0.07 |
 | after_onnx_yolox_tiny.onnx_test | `onnx:yolox_tiny.onnx` | after | test | 52.9 % | 52.9 % | – | 69.2 % | 9 / 17 | 4.2 % | 0.07 |
+| laptop_yolox_tiny_test | `onnx:yolox_tiny.onnx` | – | test | 52.9 % | 52.9 % | – | 69.2 % | 9 / 17 | 4.2 % | 0.07 |
 | before_ultralytics_yolo11n.pt_test | `ultralytics:yolo11n.pt` | before | test | 47.1 % | 47.1 % | – | 64.0 % | 8 / 17 | 4.2 % | 0.12 |
 | after_ultralytics_yolo11n.pt_test | `ultralytics:yolo11n.pt` | after | test | 52.9 % | 52.9 % | – | 69.2 % | 9 / 17 | 4.2 % | 0.12 |
 | size_ultralytics_yolo11n.pt_416_test | `ultralytics:yolo11n.pt@416` | – | test | 47.1 % | 47.1 % | – | 64.0 % | 8 / 17 | 8.3 % | 0.14 |
@@ -163,6 +164,20 @@ _before_ = Phase 1 code with default params. _after_ = current code with the par
 | `store-aisle-detection` | hard | 0 / 0 | – | – | 52 / 55 | 5.5 % | 0.31 |
 
 ### Speed
+
+**laptop** — Intel(R) Xeon(R) CPU E3-1505M v6 @ 3.00GHz, 4 cores / 8 threads, 15.8 GB RAM, GPU: Quadro M2200, Windows 11. 60 frames of `store-aisle-detection.mp4` resized to 1280x720. Date: 2026-10-05.
+
+| Model | Licence | Runtime | Input | Detector ms (mean / p95) | Detector FPS | Pipeline FPS | Cameras @10 / @15 FPS | Note |
+|---|---|---|---|---|---|---|---|---|
+| `onnx:yolox_nano.onnx` | Apache-2.0 | onnxruntime (cpu) | 416 | 14.5 / 15.9 | 69.0 | 68.4 | 5 / 3 |  |
+| `openvino:yolox_nano.onnx` | Apache-2.0 | openvino (cpu) | 416 | 12.0 / 13.9 | 83.0 | 82.3 | 6 / 4 |  |
+| `onnx:yolox_tiny.onnx` | Apache-2.0 | onnxruntime (cpu) | 416 | 34.9 / 41.7 | 28.6 | 28.5 | 2 / 1 |  |
+| `openvino:yolox_tiny.onnx` | Apache-2.0 | openvino (cpu) | 416 | 38.1 / 48.3 | 26.2 | 26.1 | 2 / 1 |  |
+| `openvino:yolox_s.onnx` | Apache-2.0 | openvino (cpu) | 640 | 177.3 / 355.1 | 5.6 | 5.6 | 0 / 0 |  |
+| `ultralytics:yolo11n.pt@640` | AGPL-3.0 | pytorch (auto) | 640 | 66.2 / 74.1 | 15.1 | 15.0 | 1 / 0 |  |
+| `ultralytics:yolo11n.pt@416` | AGPL-3.0 | pytorch (auto) | 416 | 43.9 / 48.1 | 22.8 | 22.7 | 1 / 1 |  |
+| `onnx:yolo11n.onnx` | AGPL-3.0 | onnxruntime (cpu) | 640 | 69.4 / 75.0 | 14.4 | 14.4 | 1 / 0 |  |
+| `openvino:yolo11n_openvino_model/yolo11n.xml` | AGPL-3.0 | openvino (cpu) | 640 | 70.0 / 76.9 | 14.3 | 14.3 | 1 / 0 |  |
 
 **sandbox-xeon-2core** — Intel(R) Xeon(R) Processor @ 2.80GHz, 2 cores / 2 threads, 7.8 GB RAM, GPU: none, Linux 6.18.44-fc-v64. 40 frames of `store-aisle-detection.mp4` resized to 1280x720. Date: 2026-10-03.
 
