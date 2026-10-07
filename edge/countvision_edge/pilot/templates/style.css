@@ -1,0 +1,35 @@
+@page { size: A4; margin: 16mm 16mm 18mm 16mm; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; background: #e9ecef; color: #111; font: 10.5pt/1.45 "Segoe UI", Arial, Helvetica, sans-serif; }
+.page { background: #fff; max-width: 210mm; margin: 12px auto; padding: 16mm; }
+h1 { font-size: 18pt; margin: 0 0 4mm; }
+h2 { font-size: 12.5pt; margin: 6mm 0 2mm; border-bottom: 1px solid #bbb; padding-bottom: 1mm; }
+h3 { font-size: 11pt; margin: 4mm 0 1mm; }
+p, li { margin: 0 0 2mm; }
+ul, ol { padding-left: 6mm; margin: 0 0 2mm; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 3mm; }
+th, td { border: 1px solid #999; padding: 1.5mm 2mm; text-align: left; vertical-align: top; }
+th { background: #f1f3f5; }
+.blank { display: inline-block; min-width: 55mm; border-bottom: 1px solid #333; }
+.warn { background: #fff4d6; border: 1px solid #e0b100; padding: 2mm 3mm; font-size: 9.5pt; }
+.small { font-size: 9pt; color: #333; }
+.en { color: #333; font-style: italic; }
+.sign { display: flex; gap: 12mm; margin-top: 14mm; }
+.sign div { flex: 1; border-top: 1px solid #333; padding-top: 1mm; font-size: 9pt; }
+.check li { list-style: none; margin-left: -6mm; }
+.check li::before { content: "\2610\00a0\00a0"; font-size: 12pt; }
+.draft { position: fixed; top: 4mm; right: 6mm; font-size: 8pt; color: #a00; }
+/* the sign */
+.sign-page { text-align: left; }
+.sign-head { display: flex; align-items: center; gap: 8mm; border: 3px solid #111; padding: 6mm; }
+.sign-head svg { width: 38mm; height: 38mm; flex: none; }
+.sign-title { font-size: 26pt; font-weight: 800; line-height: 1.1; }
+.sign-sub { font-size: 14pt; margin-top: 2mm; }
+.sign-box { border: 2px solid #111; border-top: 0; padding: 5mm 6mm; font-size: 12pt; }
+.sign-box p { margin-bottom: 3mm; }
+.big-note { font-size: 15pt; font-weight: 700; background: #111; color: #fff; padding: 3mm 5mm; margin: 0 0 4mm; }
+@media print {
+  body { background: #fff; }
+  .page { margin: 0; padding: 0; max-width: none; }
+  .noprint { display: none; }
+}

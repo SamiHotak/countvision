@@ -26,6 +26,7 @@ from .base import FrameSource, SourceStatus
 log = logging.getLogger(__name__)
 
 CaptureFactory = Callable[[SourceConfig], object]
+_FFMPEG_ENV_LOCK = threading.Lock()
 
 
 class Backoff:
@@ -81,15 +82,26 @@ def open_cv_capture(cfg: SourceConfig):
         if cfg.fps:
             cap.set(cv2.CAP_PROP_FPS, cfg.fps)
         return cap
-    if cfg.kind == "rtsp":
-        # TCP is slower to start but does not lose packets on bad Wi-Fi.
-        os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", f"rtsp_transport;{cfg.rtsp_transport}")
     timeout_ms = int(cfg.reconnect.open_timeout_s * 1000)
     params = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, timeout_ms, cv2.CAP_PROP_READ_TIMEOUT_MSEC, timeout_ms]
-    try:
-        return cv2.VideoCapture(cfg.uri, cv2.CAP_FFMPEG, params)
-    except (TypeError, cv2.error):  # older OpenCV without the params argument
-        return cv2.VideoCapture(cfg.uri, cv2.CAP_FFMPEG)
+    # OpenCV reads the FFmpeg options from the environment when the stream is opened. With
+    # several cameras the variable is set per camera, under a lock, just for that moment.
+    with _FFMPEG_ENV_LOCK:
+        previous = os.environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS")
+        if cfg.kind == "rtsp":
+            # TCP is slower to start but does not lose packets on bad Wi-Fi.
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{cfg.rtsp_transport}"
+        try:
+            try:
+                return cv2.VideoCapture(cfg.uri, cv2.CAP_FFMPEG, params)
+            except (TypeError, cv2.error):  # older OpenCV without the params argument
+                return cv2.VideoCapture(cfg.uri, cv2.CAP_FFMPEG)
+        finally:
+            if cfg.kind == "rtsp":
+                if previous is None:
+                    os.environ.pop("OPENCV_FFMPEG_CAPTURE_OPTIONS", None)
+                else:
+                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = previous
 
 
 class LiveSource(FrameSource):

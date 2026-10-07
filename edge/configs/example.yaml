@@ -1,6 +1,7 @@
-# CountVision edge agent - example configuration (webcam, YOLO).
+# CountVision edge agent - example configuration (webcam, YOLOX-Tiny).
 #
-#   countvision-edge run --config configs/example.yaml --show
+#   countvision-edge app --config configs/example.yaml     # web app: preview, draw lines
+#   countvision-edge run --config configs/example.yaml     # counting only (all cameras)
 #
 # All keys are checked. A typo gives an error message instead of being ignored.
 # Secrets (camera passwords) do NOT go into this file. Use ${ENV_VAR}, see example_rtsp_onnx.yaml.
@@ -8,12 +9,24 @@
 data_dir: data            # the database and heatmaps are stored here
 log_level: INFO
 
+# Default detector since phase 2: YOLOX-Tiny, Apache-2.0 (code AND weights), so it may be used
+# in a closed-source paid product. Same counting accuracy as YOLO11n in our tests, 2x faster
+# on a laptop CPU (eval/results.md). Downloaded on first start (20 MB, checksum verified).
+# Other choices: type: ultralytics + model: yolo11n.pt (AGPL-3.0, needs edge[yolo]),
+#                type: openvino (Intel CPUs), model .../yolox_s.onnx (more accurate, slower).
 detector:
-  type: ultralytics       # ultralytics (AGPL-3.0) | rfdetr (Apache-2.0) | onnx | openvino
-  model: yolo11n.pt       # downloaded on first start (needs internet once)
-  imgsz: 640
+  type: onnx
+  model: ${CV_MODELS:-models}/yolox_tiny.onnx
+  model_license: Apache-2.0 (Megvii YOLOX)
   conf: 0.2               # low on purpose: ByteTrack also uses low-score boxes
-  device: auto            # auto | cpu | cuda
+  device: auto            # auto | cpu | cuda (needs onnxruntime-gpu)
+
+# Privacy by design. Only numbers are stored. The preview picture is never saved.
+privacy:
+  preview: blur           # blur (people pixelated, 640 px) | off | full (setup only)
+
+alerts:
+  camera_offline_after_s: 300   # alert when a camera is offline for more than 5 minutes
 
 storage:
   retention_days: 30      # numbers older than this are deleted

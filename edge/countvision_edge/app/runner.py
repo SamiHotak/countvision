@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Literal
 
 import cv2
+import numpy as np
 
 from ..config import CameraConfig, EdgeConfig, SourceConfig, redact_uri
 from ..detectors.base import Detector
@@ -30,6 +31,7 @@ from ..geometry import to_pixels
 from ..inputs import create_source
 from ..inputs.base import FrameSource
 from ..pipeline import CameraPipeline, FrameResult
+from ..privacy import limit_width, pixelate_boxes
 from ..storage import SqliteBuffer
 from ..viz import Annotator
 from .config_store import save_geometry
@@ -39,7 +41,7 @@ log = logging.getLogger(__name__)
 
 PreviewMode = Literal["full", "blur", "off"]
 VIDEO_SUFFIX = "-video"
-PREVIEW_MAX_WIDTH = 960
+BLUR_MAX_WIDTH = 640  # "blur" also lowers the resolution of the preview
 PREVIEW_MAX_FPS = 15.0
 VIEWER_TIMEOUT_S = 3.0
 
@@ -83,17 +85,10 @@ def _to_normalized(point, size: tuple[int, int] | None, mode: str) -> list[float
 
 
 def blur_boxes(image, result: FrameResult) -> None:
-    """Blur every tracked box in place (privacy option for the preview)."""
-    height, width = image.shape[:2]
-    for track in result.tracks:
-        x1, y1, x2, y2 = (int(v) for v in track.xyxy)
-        x1, y1 = max(0, x1), max(0, y1)
-        x2, y2 = min(width, x2), min(height, y2)
-        if x2 - x1 < 2 or y2 - y1 < 2:
-            continue
-        roi = image[y1:y2, x1:x2]
-        small = cv2.resize(roi, (max(1, (x2 - x1) // 12), max(1, (y2 - y1) // 12)))
-        image[y1:y2, x1:x2] = cv2.resize(small, (x2 - x1, y2 - y1), interpolation=cv2.INTER_NEAREST)
+    """Pixelate every detected object in place: confirmed tracks AND fresh detections that are
+    not tracks yet (a person who just walked in must not be visible for the first frames)."""
+    boxes = [t.xyxy for t in result.tracks] + [tuple(b) for b in np.asarray(result.boxes).reshape(-1, 4)]
+    pixelate_boxes(image, boxes)
 
 
 class LiveRunner:
@@ -239,12 +234,10 @@ class LiveRunner:
             image = result.frame.image.copy()
             blur_boxes(image, result)
             result = dataclasses.replace(result, frame=dataclasses.replace(result.frame, image=image))
-        image = annotator.draw(result)
-        height, width = image.shape[:2]
-        if width > PREVIEW_MAX_WIDTH:
-            scale = PREVIEW_MAX_WIDTH / width
-            image = cv2.resize(image, (PREVIEW_MAX_WIDTH, int(round(height * scale))),
-                               interpolation=cv2.INTER_AREA)
+        max_width = self.cfg.privacy.preview_max_width
+        if self.preview == "blur":
+            max_width = min(max_width, BLUR_MAX_WIDTH)
+        image = limit_width(annotator.draw(result), max_width)
         ok, encoded = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 78])
         if not ok:
             return

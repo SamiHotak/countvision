@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pilotvereinbarung CountVision</title>
+<!--STYLE-->
+</head>
+<body>
+<main class="page">
+  <p class="warn noprint">Vorlage – keine Rechtsberatung. Vor der Unterschrift prüfen lassen. Dieser Kasten
+    wird nicht mitgedruckt.</p>
+  <h1>Pilotvereinbarung: kostenloser Test der Besucherzählung „CountVision“</h1>
+
+  <p>zwischen<br><b>{{ business.name }}</b>, {{ business.address }}, vertreten durch {{ business.contact_person }}
+    – nachfolgend „Betrieb“ –</p>
+  <p>und<br><b>{{ provider.name }}</b>, {{ provider.address }}, {{ provider.email }}, {{ provider.phone }}
+    – nachfolgend „Anbieter“ –</p>
+
+  <h2>1. Gegenstand</h2>
+  <p>Der Anbieter stellt dem Betrieb die Software CountVision für einen Test zur Verfügung. Die Software
+    zählt anhand von Kamerabildern Personen (ggf. Fahrzeuge), die festgelegte Linien überqueren, sowie die
+    Belegung und Aufenthaltsdauer in festgelegten Bereichen. Standort: {{ site_address }}.
+    Anzahl Kameras: {{ camera_count }}.</p>
+  <table>
+    <tr><th>Kamera</th><th>Ort / erfasster Bereich</th><th>Was gezählt wird</th></tr>
+    {{ cameras_rows }}
+  </table>
+
+  <h2>2. Dauer und Kosten</h2>
+  <p>Der Pilot läuft vom {{ start }} bis zum {{ end }} (ca. 1 Monat). Er ist für den Betrieb
+    <b>kostenlos</b>. Beide Seiten können ihn jederzeit ohne Angabe von Gründen formlos (auch per E-Mail)
+    beenden. Nach dem Ende entsteht keine Pflicht, das Produkt zu kaufen.</p>
+
+  <h2>3. Was die Software tut – und was nicht</h2>
+  <ul>
+    <li>Die Bilder werden auf einem Gerät vor Ort (Laptop oder Mini-PC) in Echtzeit ausgewertet und
+      <b>nicht gespeichert</b>. Es werden keine Bilder ins Internet übertragen.</li>
+    <li>Gespeichert werden nur Zählwerte und Zeitpunkte ohne Personenbezug (siehe Datenschutzhinweis).</li>
+    <li>Keine Gesichtserkennung, keine Identifizierung, keine Wiedererkennung, keine Tonaufnahme.</li>
+    <li>Die Software dient <b>nicht</b> der Überwachung oder Leistungskontrolle von Beschäftigten.</li>
+    <li>Die Zahlen sind Messwerte mit Fehlern (z. B. bei Gedränge, Dunkelheit, Verdeckung). Sie sind
+      während des Pilots nicht als geprüfte Zahlen für Abrechnungen, Mieten oder Behörden geeignet.</li>
+  </ul>
+
+  <h2>4. Rollen nach Datenschutzrecht</h2>
+  <p>Der Betrieb ist Verantwortlicher (Art. 4 Nr. 7 DSGVO), denn er entscheidet über den Einsatz in seinen
+    Räumen. Der Anbieter verarbeitet die Kamerabilder nur nach Weisung des Betriebs als Auftragsverarbeiter.
+    Dazu schließen die Parteien zusätzlich den <b>Auftragsverarbeitungsvertrag (AVV)</b> nach Art. 28 DSGVO.</p>
+
+  <h2>5. Aufgaben des Betriebs</h2>
+  <ul>
+    <li>Hinweisschilder vor dem erfassten Bereich gut sichtbar anbringen und den Datenschutzhinweis
+      bereithalten (Vorlagen stellt der Anbieter).</li>
+    <li>Beschäftigte vor dem Start informieren. Falls ein Betriebsrat besteht ({{ business.works_council }}),
+      ihn vor dem Start beteiligen (§ 87 Abs. 1 Nr. 6 BetrVG).</li>
+    <li>Prüfen, ob eine Datenschutz-Folgenabschätzung (Art. 35 DSGVO) nötig ist; die Kurzvorlage nutzen und
+      ggf. die/den Datenschutzbeauftragte/n einbeziehen.</li>
+    <li>Kameras nur auf Kunden- bzw. Verkehrsflächen richten – nie auf Toiletten, Umkleiden, Pausenräume,
+      Arbeitsplätze von Beschäftigten oder auf öffentlichen Grund außerhalb des Betriebs.</li>
+    <li>Strom und – falls nötig – Netzwerkzugang für das Zählgerät bereitstellen.</li>
+  </ul>
+
+  <h2>6. Aufgaben des Anbieters</h2>
+  <ul>
+    <li>Einrichtung, Wartung und Abbau des Zählgeräts; Unterstützung bei Fragen.</li>
+    <li>Wöchentlicher Kurzbericht mit den Zahlen; am Ende ein Abschlussbericht.</li>
+    <li>Einhaltung der im AVV vereinbarten technischen und organisatorischen Maßnahmen.</li>
+  </ul>
+
+  <h2>7. Daten am Ende des Pilots</h2>
+  <p>Der Betrieb erhält die Zählwerte als Tabelle (CSV) und Bericht. Danach löscht der Anbieter die Daten
+    vom Zählgerät innerhalb von 14 Tagen und bestätigt die Löschung schriftlich, sofern der Betrieb nichts
+    anderes wünscht. Eigentum an Kameras und Geräten bleibt unverändert.</p>
+
+  <h2>8. Rückmeldung und Referenz</h2>
+  <p>Der Betrieb gibt am Ende eine kurze Rückmeldung (ca. 20 Minuten Gespräch). Zusätzlich (bitte ankreuzen):</p>
+  <ul class="check">
+    <li>Der Anbieter darf den Betrieb als Pilotkunden <b>namentlich</b> nennen (z. B. auf der Website).</li>
+    <li>Der Anbieter darf <b>anonymisierte</b> Ergebnisse (ohne Namen des Betriebs) in einer Fallstudie zeigen.</li>
+    <li>Der Anbieter darf ein Foto der Kamera-Montage zeigen (ohne Personen).</li>
+  </ul>
+  <p class="small">Ohne Kreuz gilt: keine Nennung, keine Fallstudie, kein Foto. Die Zustimmung kann jederzeit
+    widerrufen werden.</p>
+
+  <h2>9. Haftung</h2>
+  <p>Der Pilot ist ein kostenloser Test. Der Anbieter haftet nur für Vorsatz und grobe Fahrlässigkeit sowie
+    bei Verletzung von Leben, Körper oder Gesundheit; die Haftung nach der DSGVO bleibt unberührt.
+    Die Software wird „wie besehen“ bereitgestellt.</p>
+
+  <h2>10. Sonstiges</h2>
+  <p>Änderungen bedürfen der Textform (E-Mail genügt). Es gilt deutsches Recht.</p>
+
+  <div class="sign">
+    <div>Ort, Datum: {{ city }}<br><br>Unterschrift Betrieb ({{ business.name }})</div>
+    <div>Ort, Datum:<br><br>Unterschrift Anbieter ({{ provider.name }})</div>
+  </div>
+</main>
+</body>
+</html>

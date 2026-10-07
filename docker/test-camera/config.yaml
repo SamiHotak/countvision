@@ -1,0 +1,27 @@
+# Config for the two test cameras (docker compose --profile test). Lines and zones match the
+# videos, like in eval/clips. Read-only inside the container.
+data_dir: data            # Docker sets CV_DATA_DIR=/data
+heartbeat_interval_s: 30
+detector:
+  type: onnx
+  model: ${CV_MODELS:-models}/yolox_tiny.onnx
+  model_license: Apache-2.0 (Megvii YOLOX)
+privacy:
+  preview: blur
+alerts:
+  camera_offline_after_s: 300
+cameras:
+  - id: room
+    name: Test camera 1 (office room)
+    source: {uri: "${CAM1_URL}"}
+    lines:
+      - {name: middle, p1: [0.5, 0.38], p2: [0.5, 1.0], in_direction: to_left}
+    zones:
+      - {name: floor, polygon: [[0.0, 0.42], [0.93, 0.42], [1.0, 0.6], [1.0, 1.0], [0.0, 1.0]]}
+  - id: table
+    name: Test camera 2 (table)
+    source: {uri: "${CAM2_URL}"}
+    lines:
+      - {name: exit, p1: [0.8, 0.35], p2: [0.8, 1.0]}
+    zones:
+      - {name: table, kind: queue, polygon: [[0.3, 0.45], [0.78, 0.45], [0.78, 0.97], [0.3, 0.97]]}

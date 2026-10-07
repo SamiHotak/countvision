@@ -1,0 +1,53 @@
+# CountVision edge agent - NVIDIA GPU image (x86-64 PC or server with an NVIDIA card).
+# Needs on the host: NVIDIA driver + NVIDIA Container Toolkit. Detector runs on the GPU through
+# ONNX Runtime (CUDA). Default model: YOLOX-Tiny (Apache-2.0).
+#
+#   docker compose --profile nvidia up -d --build countvision-gpu
+#
+# STATUS: written in phase 2 B but NOT built or run on a GPU yet (no GPU available). The CUDA
+# base image and the onnxruntime-gpu version must match: onnxruntime-gpu 1.20-1.22 = CUDA 12 +
+# cuDNN 9. Check https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html
+ARG BASE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
+FROM ${BASE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH \
+    CV_DATA_DIR=/data \
+    CV_MODELS=/opt/models \
+    CV_CONFIG=/config/config.yaml \
+    TZ=Europe/Berlin \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates tzdata libgl1 libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/* \
+ && python3 -m venv /opt/venv
+
+WORKDIR /app
+COPY edge/pyproject.toml edge/README.md /app/edge/
+COPY edge/countvision_edge /app/edge/countvision_edge
+# Only the GPU build of ONNX Runtime: the CPU package "onnxruntime" would hide it.
+ARG ORT_GPU="onnxruntime-gpu>=1.20,<1.23"
+RUN pip install /app/edge "${ORT_GPU}" \
+ && countvision-edge models download yolox_tiny --dir /opt/models
+
+COPY edge/configs /app/configs
+COPY docker/entrypoint.sh /usr/local/bin/countvision-entrypoint
+RUN chmod 755 /usr/local/bin/countvision-entrypoint \
+ && useradd --system --uid 10001 --gid 0 --groups video --create-home --home-dir /home/countvision countvision \
+ && mkdir -p /data /config \
+ && chown 10001:0 /data /config \
+ && chmod 775 /data /config
+
+USER 10001
+VOLUME ["/data", "/config"]
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
+  CMD ["countvision-entrypoint", "health"]
+ENTRYPOINT ["countvision-entrypoint"]
+CMD ["run"]

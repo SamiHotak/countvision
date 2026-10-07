@@ -266,7 +266,7 @@ def test_unknown_class_name_is_a_helpful_error(toy_yolo):
 
 def test_missing_model_file_is_a_clear_error(tmp_path):
     pytest.importorskip("onnxruntime")
-    with pytest.raises(DetectorError, match="Could not load ONNX model"):
+    with pytest.raises(DetectorError, match="Model file not found"):
         build_detector(DetectorConfig(type="onnx", model=str(tmp_path / "nope.onnx"), model_license="x"))
 
 

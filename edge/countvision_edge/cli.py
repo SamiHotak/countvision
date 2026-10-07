@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import signal
 import sys
 import threading
@@ -46,17 +47,24 @@ def _parse_time(value: str | None) -> float | None:
 # ------------------------------------------------------------------------------ run
 
 
+def _override_source(cam, args: argparse.Namespace):
+    if not (args.source or args.start_time):
+        return cam
+    data = cam.source.model_dump()
+    if args.source:
+        data.update(uri=args.source, kind="auto")
+    if args.start_time:
+        data["start_time"] = args.start_time
+    return cam.model_copy(update={"source": SourceConfig.model_validate(data)})
+
+
 def cmd_run(args: argparse.Namespace) -> int:
+    """Count. Without --show/--annotated all cameras of the config run together (supervisor)."""
     cfg = load_config(args.config)
     setup_logging(args.log_level or cfg.log_level)
-    cam = cfg.camera(args.camera)
-    if args.source or args.start_time:
-        data = cam.source.model_dump()
-        if args.source:
-            data.update(uri=args.source, kind="auto")
-        if args.start_time:
-            data["start_time"] = args.start_time
-        cam.source = SourceConfig.model_validate(data)
+    if not (args.show or args.annotated):
+        return _run_supervised(cfg, args)
+    cam = _override_source(cfg.camera(args.camera), args)
 
     detector = build_detector(cfg.detector)
     buffer = SqliteBuffer(
@@ -126,6 +134,76 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"Database: {cfg.db_file()}  (countvision-edge report --db {cfg.db_file()})")
     buffer.close()
     return 0
+
+
+def _run_supervised(cfg, args: argparse.Namespace) -> int:
+    """All cameras (or --camera) with restarts, status.json and offline alerts."""
+    from .supervisor import Supervisor
+
+    cameras = [cfg.camera(args.camera)] if args.camera else list(cfg.cameras)
+    if args.source or args.start_time:
+        if len(cameras) != 1:
+            raise CountVisionError("--source / --start-time need one camera: add --camera <id>.")
+        cameras = [_override_source(cameras[0], args)]
+    detector = build_detector(cfg.detector)
+    buffer = SqliteBuffer(
+        cfg.db_file(),
+        retention_days=cfg.storage.retention_days,
+        heartbeat_retention_hours=cfg.storage.heartbeat_retention_hours,
+    )
+    supervisor = Supervisor(cfg, detector, buffer, cameras, max_frames=args.max_frames)
+    stop = threading.Event()
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    ids = ", ".join(c.id for c in cameras)
+    print(f"CountVision edge {__version__}: running {len(cameras)} camera(s): {ids}. "
+          "Press Ctrl+C to stop.")
+    print(f"Status: {supervisor.status_path}  (countvision-edge health --data-dir {cfg.data_dir})")
+    try:
+        supervisor.run_forever(stop)
+    finally:
+        detector.close()
+
+    failed = []
+    for worker in supervisor.workers:
+        frames = sum(s.frames_processed for s in worker.summaries)
+        wall = sum(s.wall_s for s in worker.summaries)
+        fps = frames / wall if wall > 0 else 0.0
+        h = worker.health
+        print(f"\nCamera '{h.camera_id}': {h.state}, {frames} frames processed ({fps:.1f} FPS), "
+              f"{h.events} events, {h.restarts} restarts")
+        if h.state == "failed":
+            failed.append(f"camera {h.camera_id}: {h.last_error}")
+            continue
+        report = build_report(buffer, camera_id=worker.cam.id,
+                              line_names=[line.name for line in worker.cam.lines])
+        print(format_report(report))
+        if args.report and len(cameras) == 1:
+            Path(args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
+            print(f"\nReport written to {args.report}")
+    if args.report and len(cameras) > 1:
+        report = build_report(buffer)
+        Path(args.report).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(f"\nReport written to {args.report}")
+    print(f"Database: {cfg.db_file()}  (countvision-edge report --db {cfg.db_file()})")
+    buffer.close()
+    for message in failed:
+        print(f"Error: {message}", file=sys.stderr)
+    return 2 if failed else 0
+
+
+def cmd_health(args: argparse.Namespace) -> int:
+    """Is the counting service running? Reads <data_dir>/status.json."""
+    from .supervisor import STATUS_FILE, check_health
+
+    if args.config:
+        data_dir = Path(load_config(args.config).data_dir)
+    else:
+        data_dir = Path(args.data_dir or os.environ.get("CV_DATA_DIR") or "data")
+    report = check_health(data_dir / STATUS_FILE, max_age_s=args.max_age)
+    print("\n".join(report.lines))
+    return report.exit_code
 
 
 # ------------------------------------------------------------------------------ demo
@@ -246,12 +324,58 @@ def cmd_app(args: argparse.Namespace) -> int:
     )
 
 
+# ------------------------------------------------------------------------------ models
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    """List or download the known (permissively licensed) detector models."""
+    from .models import MODELS, download
+
+    if args.action == "list":
+        for m in MODELS.values():
+            print(f"{m.name:12} {m.size_mb:5.1f} MB  {m.license:28} {m.note}")
+        return 0
+    names = args.names or ["yolox_tiny"]
+    unknown = [n for n in names if n not in MODELS]
+    if unknown:
+        raise CountVisionError(f"Unknown model(s): {', '.join(unknown)}. See: countvision-edge models list")
+    for name in names:
+        info = MODELS[name]
+        path = download(info, Path(args.dir) / info.file)
+        print(f"{info.file}: OK ({path}, {info.license})")
+    return 0
+
+
+# ------------------------------------------------------------------------------ pilot docs
+
+
+def cmd_pilot_docs(args: argparse.Namespace) -> int:
+    """Fill the pilot templates (sign, privacy notice, agreement, AVV, DPIA, checklist)."""
+    from .pilot.docs import DOCUMENTS, PilotInfo, load_info, write_pack
+
+    if not args.info and not args.blank:
+        raise CountVisionError("Give --info pilot.yaml (see docs/pilot/pilot.example.yaml) or --blank.")
+    info = load_info(args.info) if args.info else PilotInfo()
+    files = write_pack(info, args.out)
+    print(f"Wrote {len(files)} files to {args.out}:")
+    for doc in DOCUMENTS:
+        print(f"  {doc.file:26} {doc.title} - {doc.audience}")
+    print("Open index.html in the browser and print each document (Ctrl+P, 'Save as PDF').")
+    print("TEMPLATES, not legal advice: have them checked before real use.")
+    return 0
+
+
 # ------------------------------------------------------------------------------ export
 
 
 def cmd_export(args: argparse.Namespace) -> int:
     """Export a YOLO .pt model to ONNX or OpenVINO for faster CPU inference."""
     setup_logging(args.log_level)
+    from . import PRIVACY_ENV_SET_BY_US
+
+    if "YOLO_OFFLINE" in PRIVACY_ENV_SET_BY_US:
+        # Export may need to pip-install a helper (onnxslim); Ultralytics only does that online.
+        os.environ["YOLO_OFFLINE"] = "0"
     try:
         from ultralytics import YOLO
     except ImportError as exc:
@@ -276,14 +400,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    run = sub.add_parser("run", help="Count from a camera or video file")
+    run = sub.add_parser("run", help="Count: all cameras of the config (or one with --camera)")
     run.add_argument("--config", required=True, help="YAML config file")
-    run.add_argument("--camera", help="Camera id (needed if the config has several)")
+    run.add_argument("--camera", help="Only this camera (default: all cameras of the config)")
     run.add_argument("--source", help="Override the source: 0, a file, rtsp://...")
     run.add_argument("--start-time", help="Files: time of the first frame, e.g. 2026-01-31T09:00:00")
-    run.add_argument("--max-frames", type=int, help="Stop after this many processed frames")
-    run.add_argument("--show", action="store_true", help="Show a live preview window")
-    run.add_argument("--annotated", metavar="FILE", help="Write an annotated video (.mp4)")
+    run.add_argument("--max-frames", type=int, help="Stop after this many processed frames (per camera)")
+    run.add_argument("--show", action="store_true", help="Show a live preview window (one camera)")
+    run.add_argument("--annotated", metavar="FILE", help="Write an annotated video (.mp4, one camera)")
     run.add_argument("--report", metavar="FILE", help="Write a JSON report at the end")
     run.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     run.set_defaults(func=cmd_run)
@@ -322,11 +446,31 @@ def build_parser() -> argparse.ArgumentParser:
     app.add_argument("--host", default="127.0.0.1",
                      help="127.0.0.1 = only this PC (default). 0.0.0.0 = also phones in your Wi-Fi")
     app.add_argument("--port", type=int, default=8000)
-    app.add_argument("--preview", choices=["full", "blur", "off"], default="full",
-                     help="Preview picture: full, blur (people blurred) or off")
+    app.add_argument("--preview", choices=["full", "blur", "off"], default=None,
+                     help="Preview picture: blur (people pixelated, default from privacy.preview), "
+                          "off, or full (setup only)")
     app.add_argument("--no-browser", action="store_true", help="Do not open the browser")
     app.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     app.set_defaults(func=cmd_app)
+
+    health = sub.add_parser("health", help="Is the counting service running? (exit 0 = healthy)")
+    health.add_argument("--config", help="Config file (to find data_dir)")
+    health.add_argument("--data-dir", help="Folder with status.json (default: $CV_DATA_DIR or data)")
+    health.add_argument("--max-age", type=float, default=60.0, help="Seconds before the status is stale")
+    health.set_defaults(func=cmd_health)
+
+    models = sub.add_parser("models", help="List or download detector models (Apache-2.0 YOLOX)")
+    models.add_argument("action", choices=["list", "download"])
+    models.add_argument("names", nargs="*", help="Model names (default: yolox_tiny)")
+    models.add_argument("--dir", default="models", help="Folder for the model files")
+    models.add_argument("--log-level", default="WARNING")
+    models.set_defaults(func=cmd_models)
+
+    pilot = sub.add_parser("pilot-docs", help="Make the pilot papers: sign, privacy notice, agreement, AVV")
+    pilot.add_argument("--info", help="YAML with the business details (docs/pilot/pilot.example.yaml)")
+    pilot.add_argument("--blank", action="store_true", help="Empty lines to fill in by hand")
+    pilot.add_argument("--out", default="pilot_docs", help="Output folder")
+    pilot.set_defaults(func=cmd_pilot_docs)
 
     export = sub.add_parser("export", help="Export a YOLO model to ONNX / OpenVINO")
     export.add_argument("--model", default="yolo11n.pt")

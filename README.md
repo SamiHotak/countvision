@@ -12,6 +12,7 @@ CountVision turns a shop's existing cameras into visitor and traffic numbers.
 .\start.bat            # your webcam, with the config edge\configs\local.yaml
 .\start.bat --demo     # demo video: no camera, no model
 .\start.bat --phone    # also open it on your phone in the same Wi-Fi (people blurred)
+.\start.bat --count    # counting only, all cameras (for the pilot PC)
 ```
 
 The first start creates `.venv` and installs everything. Then the browser opens
@@ -24,6 +25,22 @@ today's chart and CSV download.
 - Phase 1, Session B: the local web app (`countvision-edge app`).
 - Phase 2, Session A: evaluation on hand-labeled clips, speed benchmark, YOLOX (Apache-2.0)
   detector. Results and recommendation: [`eval/results.md`](eval/results.md).
+- Phase 2, Session B: several cameras per device, Docker images, one-line installers,
+  privacy defaults, pilot pack ([`docs/pilot/`](docs/pilot/README.md)).
+
+## Install on a pilot device (one line)
+
+```powershell
+# Windows 10/11 (PowerShell, not as admin)
+irm https://raw.githubusercontent.com/SamiHotak/countvision/main/install.ps1 | iex
+```
+
+```bash
+# Linux mini-PC (Ubuntu/Debian, Docker)
+curl -fsSL https://raw.githubusercontent.com/SamiHotak/countvision/main/install.sh | sudo bash
+```
+
+Docker by hand: [`docker/README.md`](docker/README.md).
 - Cloud dashboard: later phases.
 
 ## Folders
@@ -32,7 +49,10 @@ today's chart and CSV download.
 |---|---|
 | `edge/` | The edge agent (Python). See `edge/README.md`. |
 | `edge/countvision_edge/app/` | The local web app (FastAPI + one plain HTML/JS page). |
-| `start.bat` | Windows: install on first start, then open the local app. |
+| `start.bat` | Windows: install on first start, then open the local app (`--count`: counting only). |
+| `install.ps1`, `install.sh` | One-line installers (Windows / Linux with Docker). |
+| `docker/` | Docker images (CPU, NVIDIA, Jetson), compose file, test RTSP cameras. |
+| `docs/pilot/` | Pilot pack: install guide, sign, privacy notice, agreement, AVV, DPIA, checklist. |
 | `eval/` | Hand labels, accuracy and speed results, `laptop.bat`, Colab notebook. See `eval/README.md`. |
 | `.github/workflows/` | CI: lint, tests and browser tests on every push (CPU only). |
 

@@ -52,8 +52,11 @@ def _create(cfg: DetectorConfig) -> Detector:
             classes=cfg.classes,
         )
     if cfg.type in ("onnx", "openvino"):
+        from ..models import ensure_model
         from .backends import OnnxRuntimeBackend, OpenVinoBackend
         from .model_detector import ModelDetector
+
+        ensure_model(cfg.model)  # known models (YOLOX) are downloaded on first start
 
         backend_cls = OnnxRuntimeBackend if cfg.type == "onnx" else OpenVinoBackend
         backend = backend_cls(cfg.model, cfg.device, cfg.threads)

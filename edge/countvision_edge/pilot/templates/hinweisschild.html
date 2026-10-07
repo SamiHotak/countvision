@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Hinweisschild Besucherzählung</title>
+<!--STYLE-->
+</head>
+<body>
+<main class="page sign-page">
+  <div class="sign-head">
+    <svg viewBox="0 0 64 64" role="img" aria-label="Kamera">
+      <rect x="4" y="18" width="38" height="24" rx="3" fill="#111"/>
+      <polygon points="42,26 60,16 60,44 42,34" fill="#111"/>
+      <rect x="10" y="42" width="6" height="12" fill="#111"/>
+      <rect x="4" y="52" width="18" height="5" rx="1" fill="#111"/>
+      <circle cx="14" cy="30" r="5" fill="#fff"/>
+    </svg>
+    <div>
+      <div class="sign-title">Kamera-gestützte Besucherzählung</div>
+      <div class="sign-sub">Camera-based visitor counting</div>
+    </div>
+  </div>
+  <div class="sign-box">
+    <p class="big-note">Es werden keine Bilder gespeichert – nur anonyme Zahlen.<br>
+      <span style="font-size:12pt;font-weight:400">No images are stored – only anonymous numbers.</span></p>
+
+    <p><b>Verantwortlich / Controller:</b><br>{{ business.name }}<br>{{ business.address }}<br>
+      {{ business.email }} · {{ business.phone }}</p>
+
+    <p><b>Datenschutzbeauftragte/r / Data protection officer:</b> {{ business.dpo }}</p>
+
+    <p><b>Zweck / Purpose:</b> Zählen, wie viele Personen kommen und gehen und wie lange gewartet wird
+      (Personalplanung, Wartezeiten, Sicherheit). Keine Gesichtserkennung, keine Identifizierung,
+      keine Leistungskontrolle von Beschäftigten.<br>
+      <span class="en">Counting how many people come and go and how long they wait. No face recognition,
+      no identification, no monitoring of employees' performance.</span></p>
+
+    <p><b>Rechtsgrundlage / Legal basis:</b> Art. 6 Abs. 1 lit. f DSGVO – berechtigtes Interesse an der
+      Planung nach dem tatsächlichen Besucheraufkommen.<br>
+      <span class="en">Art. 6(1)(f) GDPR – legitimate interest in planning based on real visitor numbers.</span></p>
+
+    <p><b>Speicherdauer / Storage:</b> Kamerabilder werden nur im Arbeitsspeicher eines Geräts vor Ort
+      ausgewertet und sofort verworfen (keine Aufzeichnung). Gespeichert werden nur Zählwerte ohne
+      Personenbezug: {{ counts_retention }}.<br>
+      <span class="en">Images are analysed in memory on a device on site and discarded immediately
+      (no recording). Only counts without reference to persons are kept.</span></p>
+
+    <p><b>Weitere Informationen / More information:</b> Aushang an der Kasse und auf Nachfrage beim Personal.
+      <span class="en">At the till and from our staff.</span></p>
+  </div>
+  <p class="small">Vorlage CountVision – keine Rechtsberatung. Stand {{ today }}.</p>
+</main>
+</body>
+</html>

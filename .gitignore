@@ -35,3 +35,11 @@ snapshot*.jpg
 snap*.jpg
 my*.yaml
 /pytest
+# Docker: settings with camera passwords and the database stay on the PC
+docker/.env
+docker/config/
+docker/data/
+# downloaded detector models (countvision-edge models download)
+/models/
+pilot_*.yaml
+pilot_docs*/

@@ -1,0 +1,18 @@
+# Test cameras for CountVision (docker compose --profile test).
+# MediaMTX plays two evaluation videos in a loop as RTSP streams:
+#   rtsp://test-camera:8554/cam1   people-detection.mp4 (office room)
+#   rtsp://test-camera:8554/cam2   one-by-one-person-detection.mp4 (person at a table)
+# The videos come from eval/videos (download them with: countvision-edge eval fetch).
+# Stop this container to simulate a camera outage; start it again to test the reconnect.
+logLevel: warn
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+paths:
+  cam1:
+    runOnInit: ffmpeg -nostdin -loglevel error -re -stream_loop -1 -i /videos/people-detection.mp4 -an -c:v libx264 -preset ultrafast -tune zerolatency -g 24 -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+  cam2:
+    runOnInit: ffmpeg -nostdin -loglevel error -re -stream_loop -1 -i /videos/one-by-one-person-detection.mp4 -an -c:v libx264 -preset ultrafast -tune zerolatency -g 24 -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes

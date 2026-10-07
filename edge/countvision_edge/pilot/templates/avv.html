@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Auftragsverarbeitungsvertrag CountVision</title>
+<!--STYLE-->
+</head>
+<body>
+<main class="page">
+  <p class="warn noprint">Vorlage – keine Rechtsberatung. Ein AVV muss die Pflichtinhalte des Art. 28 Abs. 3
+    DSGVO enthalten; diese Vorlage deckt sie ab, ist aber vor der Unterschrift prüfen zu lassen. Dieser Kasten
+    wird nicht mitgedruckt.</p>
+  <h1>Vertrag über die Auftragsverarbeitung (Art. 28 DSGVO)</h1>
+  <p>Verantwortlicher (Auftraggeber): <b>{{ business.name }}</b>, {{ business.address }}<br>
+    Auftragsverarbeiter (Auftragnehmer): <b>{{ provider.name }}</b>, {{ provider.address }}</p>
+
+  <h2>§ 1 Gegenstand, Dauer, Art und Zweck</h2>
+  <p>Der Auftragnehmer betreibt für den Auftraggeber die Besucherzählung CountVision am Standort
+    {{ site_address }} im Rahmen der Pilotvereinbarung vom {{ start }} bis {{ end }}. Die Verarbeitung
+    besteht darin, Kamerabilder in Echtzeit auf einem Gerät vor Ort automatisiert auszuwerten und daraus
+    Zählwerte zu bilden. Zwecke: {{ purposes_short }}.</p>
+  <p><b>Art der Daten:</b> Kamerabilder (flüchtig, ohne Speicherung), auf denen Personen erkennbar sein
+    können; daraus abgeleitete Zählereignisse (Zeitpunkt, Richtung, Objektart, Aufenthaltsdauer, zufällige
+    Kurzzeit-Nummer). <b>Betroffene:</b> Kundinnen und Kunden, Besucherinnen und Besucher, Beschäftigte und
+    andere Personen im Erfassungsbereich. Besondere Kategorien (Art. 9 DSGVO) werden nicht verarbeitet;
+    es findet keine biometrische Auswertung statt.</p>
+
+  <h2>§ 2 Weisungen</h2>
+  <p>Der Auftragnehmer verarbeitet die Daten nur auf dokumentierte Weisung des Auftraggebers (Art. 28
+    Abs. 3 lit. a DSGVO). Weisungen erfolgen in Textform. Hält der Auftragnehmer eine Weisung für
+    rechtswidrig, informiert er den Auftraggeber unverzüglich.</p>
+
+  <h2>§ 3 Vertraulichkeit</h2>
+  <p>Der Auftragnehmer setzt nur Personen ein, die zur Vertraulichkeit verpflichtet sind (lit. b).</p>
+
+  <h2>§ 4 Technische und organisatorische Maßnahmen (Art. 32 DSGVO)</h2>
+  <p>Der Auftragnehmer trifft die Maßnahmen in der Anlage „TOM“ (lit. c). Er darf sie durch gleichwertige
+    oder bessere Maßnahmen ersetzen.</p>
+
+  <h2>§ 5 Unterauftragsverarbeiter</h2>
+  <p>Unterauftragsverarbeiter werden nicht eingesetzt. Der Einsatz ist nur nach vorheriger Zustimmung des
+    Auftraggebers in Textform erlaubt (lit. d, Art. 28 Abs. 2 und 4 DSGVO).</p>
+
+  <h2>§ 6 Unterstützung</h2>
+  <p>Der Auftragnehmer unterstützt den Auftraggeber bei der Beantwortung von Anträgen betroffener Personen
+    (lit. e) und bei den Pflichten nach Art. 32 bis 36 DSGVO, insbesondere bei einer Datenschutz-
+    Folgenabschätzung (lit. f). Er meldet Verletzungen des Schutzes personenbezogener Daten unverzüglich,
+    spätestens innerhalb von 24 Stunden nach Kenntnis.</p>
+
+  <h2>§ 7 Löschung und Rückgabe</h2>
+  <p>Nach Ende der Verarbeitung übergibt der Auftragnehmer die Zählwerte als CSV an den Auftraggeber und
+    löscht alle Daten vom Zählgerät innerhalb von 14 Tagen, sofern keine Pflicht zur Speicherung besteht
+    (lit. g). Er bestätigt die Löschung in Textform.</p>
+
+  <h2>§ 8 Nachweise und Kontrollen</h2>
+  <p>Der Auftragnehmer stellt alle Informationen zum Nachweis der Pflichten zur Verfügung und ermöglicht
+    Überprüfungen durch den Auftraggeber oder einen beauftragten Prüfer nach Absprache (lit. h).</p>
+
+  <h2>§ 9 Ort der Verarbeitung</h2>
+  <p>Die Verarbeitung findet ausschließlich auf dem Zählgerät am Standort des Auftraggebers statt. Fernwartung
+    erfolgt nur aus der EU, verschlüsselt und nur nach Ankündigung. Eine Übermittlung in Drittländer findet
+    nicht statt.</p>
+
+  <div class="sign">
+    <div>Ort, Datum: {{ city }}<br><br>Auftraggeber ({{ business.name }})</div>
+    <div>Ort, Datum:<br><br>Auftragnehmer ({{ provider.name }})</div>
+  </div>
+
+  <h1 style="margin-top:12mm">Anlage TOM – technische und organisatorische Maßnahmen</h1>
+  <table>
+    <tr><th>Ziel</th><th>Maßnahme in CountVision</th></tr>
+    <tr><td>Datenminimierung, Privacy by Design (Art. 25)</td><td>Keine Speicherung von Bildern oder Videos; Auswertung nur im Arbeitsspeicher. Gespeichert werden nur Zählereignisse ohne Bild, ohne Koordinaten, ohne Merkmale von Personen. Keine Gesichtserkennung, keine Biometrie, keine Wiedererkennung zwischen Kameras oder Tagen.</td></tr>
+    <tr><td>Speicherbegrenzung</td><td>Automatische Löschung auf dem Zählgerät: {{ counts_retention }}. Gerätestatus (Bildrate, Auslastung) nach 48 Stunden.</td></tr>
+    <tr><td>Vertraulichkeit der Vorschau</td><td>Die Live-Vorschau für die Einrichtung ist standardmäßig verpixelt und auf 640 Pixel Breite reduziert, wird nicht gespeichert und nur erzeugt, während jemand sie ansieht. Zugriff nur am Gerät selbst oder im lokalen Netz mit zufälligem Zugangsschlüssel.</td></tr>
+    <tr><td>Keine Datenabflüsse</td><td>Keine Cloud im Pilot. Telemetrie der verwendeten Bibliotheken (ONNX Runtime, Ultralytics) ist abgeschaltet. Kamera-Passwörter stehen nicht in Konfigurationsdateien oder Logs.</td></tr>
+    <tr><td>Zugangskontrolle</td><td>Zählgerät mit Benutzerkonto und Passwort; Festplattenverschlüsselung (BitLocker bzw. LUKS), soweit vom Gerät unterstützt; Gerät nicht frei zugänglich aufgestellt.</td></tr>
+    <tr><td>Verfügbarkeit</td><td>Automatischer Neustart bei Fehlern, automatische Wiederverbindung zu Kameras, Statusdatei und Alarm bei Kameraausfall über 5 Minuten.</td></tr>
+    <tr><td>Integrität / Nachvollziehbarkeit</td><td>Erkennungsmodell wird nur mit geprüfter Prüfsumme (SHA-256) geladen; Software-Version, Modell und Lizenz werden protokolliert.</td></tr>
+    <tr><td>Trennung</td><td>Eigene Datenbank pro Standort; keine Zusammenführung mit Daten anderer Kunden.</td></tr>
+    <tr><td>Löschung am Ende</td><td>Löschung des Datenordners und Bestätigung in Textform.</td></tr>
+  </table>
+</main>
+</body>
+</html>

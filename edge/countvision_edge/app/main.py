@@ -33,7 +33,7 @@ class AppOptions:
     host: str = "127.0.0.1"
     port: int = 8000
     open_browser: bool = True
-    preview: PreviewMode = "full"
+    preview: PreviewMode | None = None  # None = privacy.preview from the config (default blur)
     demo: bool = False
     demo_dir: str = "demo_app"
     log_level: str | None = None
@@ -98,7 +98,13 @@ def run_app(options: AppOptions) -> int:
         raise CountVisionError("Give a config file (--config) or use --demo.")
     cfg = load_config(config_path)
     setup_logging(options.log_level or cfg.log_level)
-    cam = cfg.camera(options.camera)
+    if options.camera is None and len(cfg.cameras) > 1:
+        cam = cfg.cameras[0]
+        others = ", ".join(c.id for c in cfg.cameras[1:])
+        print(f"The config has {len(cfg.cameras)} cameras. Showing '{cam.id}'. "
+              f"For another one start with --camera <id> ({others}).")
+    else:
+        cam = cfg.camera(options.camera)
     if options.source:
         cam = cam.model_copy(update={"source": SourceConfig(uri=options.source)})
 
@@ -110,7 +116,8 @@ def run_app(options: AppOptions) -> int:
         retention_days=cfg.storage.retention_days,
         heartbeat_retention_hours=cfg.storage.heartbeat_retention_hours,
     )
-    runner = LiveRunner(cfg, cam, detector, buffer, config_path=config_path, preview=options.preview)
+    preview = options.preview or cfg.privacy.preview
+    runner = LiveRunner(cfg, cam, detector, buffer, config_path=config_path, preview=preview)
     access_key = None if loopback else make_access_key()
     stopping = threading.Event()
     app = create_app(
@@ -130,8 +137,8 @@ def run_app(options: AppOptions) -> int:
         if lan:
             print(f"On your phone (same Wi-Fi): http://{lan}:{options.port}/?key={access_key}")
         print("The page is open to your network. Only people with the key can use it.")
-        if options.preview == "full":
-            print("Tip: --preview blur hides people in the preview picture.")
+        if preview == "full":
+            print("Note: the preview shows people unblurred (--preview full). Use it only for setup.")
     print(f"Detector licence: {detector.info.license}")
     print("Press Ctrl+C to stop.\n")
 

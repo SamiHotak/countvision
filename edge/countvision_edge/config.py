@@ -249,6 +249,29 @@ class CameraConfig(_Model):
 # --------------------------------------------------------------------------- top level
 
 
+class PrivacyConfig(_Model):
+    """Privacy by design. Only numbers are ever stored; these settings control the picture.
+
+    preview:      picture in the local web app. "blur" (default) pixelates every detected
+                  person/vehicle and lowers the resolution to 640 px, "off" shows no picture
+                  at all, "full" shows the camera as it is (only for setup, with permission).
+    preview_max_width: the preview is never wider than this.
+    snapshots:    allow "countvision-edge snapshot" (one frame saved locally, for drawing
+                  lines). Set false on a site where nobody may store any picture.
+    """
+
+    preview: Literal["blur", "off", "full"] = "blur"
+    preview_max_width: int = Field(960, ge=160, le=3840)
+    snapshots: bool = True
+
+
+class AlertsConfig(_Model):
+    """When to raise an alert. Alerts are written to the log, to status.json and as events
+    (kind ``camera_offline`` / ``camera_online``) that the cloud will send on (phase 4)."""
+
+    camera_offline_after_s: float = Field(300.0, gt=0)  # target: alert if offline > 5 min
+
+
 class StorageConfig(_Model):
     db_path: str | None = None  # default: <data_dir>/countvision.db
     retention_days: int = Field(30, ge=1)  # numbers older than this are deleted
@@ -260,8 +283,11 @@ class EdgeConfig(_Model):
     data_dir: str = "data"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     heartbeat_interval_s: float = Field(10.0, gt=0)
+    status_interval_s: float = Field(5.0, gt=0)  # how often <data_dir>/status.json is written
     detector: DetectorConfig = Field(default_factory=DetectorConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
+    privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
+    alerts: AlertsConfig = Field(default_factory=AlertsConfig)
     cameras: list[CameraConfig] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -297,7 +323,7 @@ class EdgeConfig(_Model):
                 ids = ", ".join(c.id for c in self.cameras)
                 raise ConfigError(
                     f"The config has several cameras ({ids}). Choose one with --camera. "
-                    "Running several cameras at once comes in phase 2 session B."
+                    "(countvision-edge run without --show runs all cameras together.)"
                 )
             return self.cameras[0]
         for camera in self.cameras:
@@ -337,7 +363,7 @@ def expand_env(value: Any, env: Mapping[str, str] | None = None) -> Any:
 
 def parse_config(data: Mapping[str, Any], env: Mapping[str, str] | None = None) -> EdgeConfig:
     """Validate a config dict. Environment overrides: CV_DATA_DIR, CV_DB_PATH, CV_LOG_LEVEL,
-    CV_DEVICE_ID."""
+    CV_DEVICE_ID, CV_PREVIEW (blur | off | full)."""
     environ = os.environ if env is None else env
     expanded = expand_env(dict(data), environ)
     overrides = {
@@ -345,6 +371,7 @@ def parse_config(data: Mapping[str, Any], env: Mapping[str, str] | None = None) 
         "CV_LOG_LEVEL": ("log_level",),
         "CV_DEVICE_ID": ("device_id",),
         "CV_DB_PATH": ("storage", "db_path"),
+        "CV_PREVIEW": ("privacy", "preview"),
     }
     for variable, path in overrides.items():
         if environ.get(variable):

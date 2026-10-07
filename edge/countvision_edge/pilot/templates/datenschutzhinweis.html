@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Datenschutzhinweis Besucherzählung</title>
+<!--STYLE-->
+</head>
+<body>
+<main class="page">
+  <p class="warn noprint">Vorlage – keine Rechtsberatung. Vor dem Aushang prüfen lassen und an den Betrieb
+    anpassen. Dieser Kasten wird nicht mitgedruckt.</p>
+  <h1>Datenschutzhinweis: kamera-gestützte Besucherzählung</h1>
+  <p>Information nach Art. 13 Datenschutz-Grundverordnung (DSGVO) · Stand {{ today }}</p>
+
+  <h2>1. Verantwortlicher</h2>
+  <p>{{ business.name }}, {{ business.address }}<br>E-Mail: {{ business.email }} · Telefon: {{ business.phone }}<br>
+    Ansprechperson: {{ business.contact_person }}</p>
+  <p>Datenschutzbeauftragte/r: {{ business.dpo }}</p>
+
+  <h2>2. Was wir tun</h2>
+  <p>In unseren Räumen ({{ site_address }}) zählen Kameras, wie viele Personen den Bereich betreten und
+    verlassen, wie viele Personen gleichzeitig anwesend sind und wie lange in festgelegten Bereichen
+    (z. B. an der Kasse) gewartet wird. Eingesetzte Kameras:</p>
+  <table>
+    <tr><th>Kamera</th><th>Ort / erfasster Bereich</th><th>Was gezählt wird</th></tr>
+    {{ cameras_rows }}
+  </table>
+  <p>Eine Software („CountVision“) wertet das Kamerabild auf einem Gerät vor Ort aus: Sie erkennt, dass
+    sich eine Person (bzw. ein Fahrzeug) im Bild bewegt, und zählt das Überqueren einer gedachten Linie.
+    <b>Es findet keine Aufzeichnung statt.</b> Jedes Bild wird nur kurz im Arbeitsspeicher verarbeitet und
+    sofort verworfen. Es gibt keine Gesichtserkennung, keine biometrische Auswertung, keine
+    Wiedererkennung von Personen über verschiedene Tage oder Kameras und keine Übertragung von Bildern
+    ins Internet.</p>
+
+  <h2>3. Zwecke und Rechtsgrundlage</h2>
+  <ul>{{ purposes }}</ul>
+  <p>Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO. Unser berechtigtes Interesse besteht darin, Personal,
+    Öffnungszeiten und Abläufe am tatsächlichen Besucheraufkommen auszurichten und Höchstbelegungen
+    einzuhalten. Wir haben dieses Interesse gegen Ihre Interessen abgewogen: Da keine Bilder gespeichert
+    und keine Personen identifiziert werden und nur anonyme Zahlen entstehen, ist der Eingriff gering.
+    Die Zählung dient <b>nicht</b> der Kontrolle von Verhalten oder Leistung unserer Beschäftigten.</p>
+
+  <h2>4. Welche Daten entstehen und wie lange sie gespeichert werden</h2>
+  <table>
+    <tr><th>Daten</th><th>Speicherung</th></tr>
+    <tr><td>Kamerabild (Videostream)</td><td>keine – Verarbeitung nur im Arbeitsspeicher, Bruchteile einer Sekunde</td></tr>
+    <tr><td>Zählereignisse (Zeitpunkt, Richtung, Objektart, z. B. „Person, 10:41 Uhr, hinein“) und
+      Aufenthaltsdauer in einem Bereich, mit einer zufälligen, nur kurz gültigen Nummer statt einer Person</td>
+      <td>{{ counts_retention }}</td></tr>
+    <tr><td>Zusammengefasste Zahlen pro Minute/Stunde/Tag (Summen, Durchschnitte)</td>
+      <td>{{ counts_retention }}; danach nur noch als Statistik ohne Bezug zu einzelnen Ereignissen</td></tr>
+  </table>
+  <p>Für die Einrichtung (Einzeichnen der Zähllinie) kann das Live-Bild kurzzeitig auf einem Gerät im
+    lokalen Netz angezeigt werden. Personen sind dabei verpixelt; das Bild wird nicht gespeichert.</p>
+
+  <h2>5. Empfänger</h2>
+  <p>Die Software wird von {{ provider.name }} ({{ provider.address }}) als Auftragsverarbeiter nach
+    Art. 28 DSGVO betrieben und gewartet. Eine Weitergabe an Dritte oder in Länder außerhalb der EU findet
+    nicht statt.</p>
+
+  <h2>6. Ihre Rechte</h2>
+  <p>Sie haben das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung
+    (Art. 18) und Widerspruch (Art. 21 DSGVO) gegen die Verarbeitung auf Grundlage berechtigter Interessen.
+    Da keine Bilder gespeichert werden und die Zahlen keiner Person zugeordnet werden können, können wir
+    gespeicherte Daten in der Regel keiner Person zuordnen (Art. 11 DSGVO). Sie haben außerdem das Recht,
+    sich bei einer Datenschutz-Aufsichtsbehörde zu beschweren, z. B. bei: {{ authority }}.</p>
+
+  <h2>7. Pflicht zur Bereitstellung, automatisierte Entscheidungen</h2>
+  <p>Sie sind nicht verpflichtet, Daten bereitzustellen. Eine automatisierte Entscheidung im Einzelfall
+    oder ein Profiling (Art. 22 DSGVO) findet nicht statt.</p>
+
+  <hr>
+  <h2 lang="en">Privacy notice (English summary)</h2>
+  <p lang="en" class="en">Controller: {{ business.name }}, {{ business.address }}, {{ business.email }}.
+    Cameras count how many people enter and leave and how long they wait in defined areas. A program on a
+    device on site analyses each image in memory and discards it immediately: no recording, no face
+    recognition, no identification, no images sent to the internet. Purposes: staff planning, waiting
+    times, safety limits. Legal basis: Art. 6(1)(f) GDPR (legitimate interest). Stored are only counting
+    events and statistics without reference to persons ({{ counts_retention }}). Processor: {{ provider.name }}.
+    You have the rights under Art. 15–21 GDPR and may complain to a supervisory authority ({{ authority }}).</p>
+</main>
+</body>
+</html>

@@ -44,3 +44,54 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Browser tests (draw a line, save, download CSV, phone layout)
         run: python -m pytest edge/tests/e2e -q
+
+  docker:
+    # Builds the CPU image and runs it against two fake RTSP cameras (MediaMTX looping the
+    # evaluation videos): checks install, model download, multi-camera counting and health.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the CPU image
+        run: docker build -f docker/Dockerfile -t countvision-edge:cpu .
+      - name: Self-test inside the image
+        run: docker run --rm countvision-edge:cpu demo --no-video --out /tmp/demo
+      - name: Test videos for the fake cameras
+        run: |
+          mkdir -p eval/videos
+          for v in people-detection one-by-one-person-detection; do
+            curl -fsSL -o eval/videos/$v.mp4 https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/$v.mp4
+          done
+      - name: Two RTSP cameras + counting service
+        working-directory: docker
+        run: |
+          cp .env.example .env
+          mkdir -p config data && sudo chown -R 10001 config data
+          docker compose --profile test up -d
+          for i in $(seq 1 30); do
+            sleep 10
+            if docker compose exec -T countvision countvision-entrypoint health | tee /tmp/health.txt | grep -q "table: running" \
+               && grep -q "room: running" /tmp/health.txt && ! grep -q " 0 frames" /tmp/health.txt; then
+              echo "healthy after $((i * 10)) s"; cat /tmp/health.txt; break
+            fi
+          done
+          docker compose exec -T countvision countvision-entrypoint health
+      - name: Camera outage and reconnect
+        working-directory: docker
+        run: |
+          docker compose stop test-camera
+          sleep 40
+          docker compose exec -T countvision countvision-entrypoint health | tee /tmp/down.txt || true
+          grep -q "offline" /tmp/down.txt
+          docker compose start test-camera
+          for i in $(seq 1 12); do
+            sleep 5
+            docker compose exec -T countvision countvision-entrypoint health > /tmp/up.txt || true
+            if grep -q "room: running" /tmp/up.txt && grep -q "table: running" /tmp/up.txt; then
+              echo "back after $((i * 5)) s"; cat /tmp/up.txt; exit 0
+            fi
+          done
+          cat /tmp/up.txt; exit 1
+      - name: Logs
+        if: always()
+        working-directory: docker
+        run: docker compose --profile test logs --tail 80

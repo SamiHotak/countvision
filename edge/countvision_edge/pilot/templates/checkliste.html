@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Checkliste Pilotstart</title>
+<!--STYLE-->
+</head>
+<body>
+<main class="page">
+  <h1>Checkliste vor dem Start – {{ business.name }}</h1>
+  <p>Standort: {{ site_address }} · Pilot: {{ start }} bis {{ end }}</p>
+
+  <h2>Papiere (vor der Montage)</h2>
+  <ul class="check">
+    <li>Pilotvereinbarung von beiden unterschrieben</li>
+    <li>Auftragsverarbeitungsvertrag (AVV) von beiden unterschrieben</li>
+    <li>Datenschutz-Folgenabschätzung geprüft / ausgefüllt (Betrieb)</li>
+    <li>Beschäftigte informiert; Betriebsrat beteiligt (falls vorhanden: {{ business.works_council }})</li>
+    <li>Hinweisschild(er) hängen VOR dem erfassten Bereich, auf Augenhöhe, gut lesbar</li>
+    <li>Datenschutzhinweis liegt an der Kasse aus (und steht ggf. auf der Website)</li>
+  </ul>
+
+  <h2>Technik (am Montagetag)</h2>
+  <ul class="check">
+    <li>Kamera erfasst nur Eingang / Kundenbereich, keine Arbeitsplätze, keine Straße, keine Nachbarn</li>
+    <li>Kamerawinkel: von schräg oben (ideal 30–60°), Füße der Personen im Bild; Gegenlicht vermeiden</li>
+    <li>Zähllinie mit mindestens ~1,5 m sichtbarem Weg auf beiden Seiten (nicht direkt an der Tür/Wand)</li>
+    <li>Vorschau steht auf „blur“ (Personen verpixelt)</li>
+    <li>Gerät: Benutzerpasswort gesetzt, Festplatte verschlüsselt, Energiesparmodus aus, Autostart an</li>
+    <li>15 Minuten Handzählung parallel: Hand ____ hinein / ____ hinaus, Gerät ____ / ____</li>
+    <li>Status geprüft: „running“, keine Warnung (countvision-edge health)</li>
+  </ul>
+
+  <h2>Während des Pilots (wöchentlich)</h2>
+  <ul class="check">
+    <li>Status und Kameraausfälle prüfen; Bericht an den Betrieb senden</li>
+    <li>Eine Stichprobe von 15 Minuten von Hand nachzählen und notieren</li>
+  </ul>
+
+  <h2>Ende</h2>
+  <ul class="check">
+    <li>CSV und Abschlussbericht an den Betrieb übergeben</li>
+    <li>Rückmeldegespräch geführt (Notizen)</li>
+    <li>Daten vom Gerät gelöscht und Löschung in Textform bestätigt (innerhalb 14 Tagen)</li>
+    <li>Hinweisschilder abgenommen, Gerät abgebaut</li>
+  </ul>
+</main>
+</body>
+</html>

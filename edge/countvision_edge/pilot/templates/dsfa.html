@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>DSFA Kurzvorlage Besucherzählung</title>
+<!--STYLE-->
+</head>
+<body>
+<main class="page">
+  <p class="warn noprint">Kurzvorlage zur Unterstützung des Verantwortlichen. Ob eine Datenschutz-Folgenabschätzung
+    (DSFA) Pflicht ist, entscheidet der Betrieb, ggf. mit seiner/seinem Datenschutzbeauftragten. Nach der
+    Orientierungshilfe der Datenschutzkonferenz ist sie zwingend, wenn zwei oder mehr der neun Kriterien der
+    Aufsichtsbehörden zutreffen – bei systematischer Beobachtung öffentlich zugänglicher Bereiche mit neuer
+    Technik (KI) ist das naheliegend. Dieser Kasten wird nicht mitgedruckt.</p>
+  <h1>Datenschutz-Folgenabschätzung (Art. 35 DSGVO) – Kurzvorlage</h1>
+  <p>Verantwortlicher: {{ business.name }} · Standort: {{ site_address }} · Datum: {{ today }}</p>
+
+  <h2>1. Beschreibung der Verarbeitung</h2>
+  <p>Automatisierte Zählung von Personen in Kamerabildern. {{ camera_count }} Kamera(s):</p>
+  <table><tr><th>Kamera</th><th>Ort / Bereich</th><th>Zählung</th></tr>{{ cameras_rows }}</table>
+  <p>Ablauf: Bild → Personenerkennung im Arbeitsspeicher → Verfolgung über wenige Sekunden mit zufälliger
+    Nummer → Zählung beim Überqueren einer Linie → Speicherung nur der Zählung → Bild wird verworfen.
+    Auftragsverarbeiter: {{ provider.name }}.</p>
+
+  <h2>2. Zwecke, Notwendigkeit und Verhältnismäßigkeit</h2>
+  <ul>{{ purposes }}</ul>
+  <p>Mildere Mittel geprüft: Handzählung (personalintensiv, nur Stichproben), Lichtschranke (keine
+    Richtung/Belegung/Wartezeit, Fehlzählungen bei Gruppen). Begründung, warum die Kamera nötig ist:</p>
+  <p>{{ business.contact_person }}:</p>
+  <p>______________________________________________________________________________</p>
+  <p>______________________________________________________________________________</p>
+
+  <h2>3. Risiken für Betroffene</h2>
+  <table>
+    <tr><th>Risiko</th><th>Bewertung ohne Maßnahmen</th><th>Maßnahme</th><th>Restrisiko</th></tr>
+    <tr><td>Gefühl der Überwachung, Verhaltensänderung</td><td>mittel</td><td>Hinweisschild mit „keine Speicherung“, Kamera nur auf Eingang/Kasse, keine Zoom-/Schwenkfunktion</td><td>gering</td></tr>
+    <tr><td>Missbrauch der Bilder (Weitergabe, Auswertung)</td><td>hoch</td><td>Keine Speicherung, keine Übertragung, Vorschau verpixelt und flüchtig</td><td>gering</td></tr>
+    <tr><td>Identifizierung / Profilbildung</td><td>hoch</td><td>Keine Gesichtserkennung, keine Biometrie, keine Wiedererkennung über Tage oder Kameras</td><td>gering</td></tr>
+    <tr><td>Kontrolle von Beschäftigten</td><td>mittel</td><td>Bereiche ohne feste Arbeitsplätze, Zweckbindung, Information, ggf. Betriebsrat</td><td>gering</td></tr>
+    <tr><td>Unbefugter Zugriff auf das Gerät</td><td>mittel</td><td>Passwort, Verschlüsselung, Aufstellort, Zugangsschlüssel für die Vorschau</td><td>gering</td></tr>
+  </table>
+
+  <h2>4. Ergebnis</h2>
+  <ul class="check">
+    <li>Die Risiken sind durch die Maßnahmen ausreichend eingedämmt. Die Verarbeitung kann beginnen.</li>
+    <li>Es verbleibt ein hohes Risiko. Vorherige Konsultation der Aufsichtsbehörde (Art. 36 DSGVO) nötig.</li>
+  </ul>
+  <p>Stellungnahme Datenschutzbeauftragte/r: {{ business.dpo }}</p>
+  <div class="sign"><div>Ort, Datum, Unterschrift Verantwortlicher</div></div>
+</main>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# Details for the pilot papers. Copy this file (e.g. to pilot_cafe.yaml, NOT into git: it is
+# ignored as pilot_*.yaml), fill it in, then:
+#   countvision-edge pilot-docs --info pilot_cafe.yaml --out pilot_docs_cafe
+# Empty fields become lines to fill in by hand.
+
+business:                       # the shop/cafe/gym = controller (Verantwortlicher)
+  name: "Café Beispiel GmbH"
+  address: "Musterstraße 1, 41061 Mönchengladbach"
+  contact_person: "Max Mustermann (Geschäftsführer)"
+  email: "info@cafe-beispiel.de"
+  phone: "02161 000000"
+  dpo: ""                       # Datenschutzbeauftragte/r, if they have one
+  works_council: false          # Betriebsrat? true/false
+
+provider:                       # you = processor (Auftragsverarbeiter)
+  name: ""                      # e.g. your name or business name
+  address: ""
+  email: ""
+  phone: ""
+
+site_address: "Musterstraße 1, 41061 Mönchengladbach, Verkaufsraum Erdgeschoss"
+city: "Mönchengladbach"
+start: "01.11.2026"
+end: "30.11.2026"
+
+cameras:
+  - name: "Eingang"
+    location: "über der Eingangstür, Blick auf den Eingangsbereich innen (ca. 3 m)"
+    counts: "Personen hinein / hinaus"
+  - name: "Kasse"
+    location: "Decke vor der Kasse, Blick auf den Wartebereich (ohne Kassenarbeitsplatz)"
+    counts: "Personen in der Warteschlange, Wartezeit"
+
+# Optional: change the purposes (one line each) or the storage text
+# purposes:
+#   - "Personaleinsatz nach dem tatsächlichen Besucheraufkommen planen"
+# counts_retention: "höchstens 45 Tage auf dem Zählgerät, danach automatische Löschung"

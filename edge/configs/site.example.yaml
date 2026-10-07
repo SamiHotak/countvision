@@ -1,0 +1,60 @@
+# CountVision - a real site: several IP cameras, counting service (Docker or Windows).
+#
+#   countvision-edge run --config site.yaml          # all cameras, restarts, status.json
+#   countvision-edge health --config site.yaml       # is it running?
+#
+# Camera addresses with passwords go into environment variables (the .env file for Docker),
+# never into this file:  CAM1_URL=rtsp://user:password@192.168.1.20:554/stream1
+# Find the RTSP address in the camera's manual or app ("RTSP", "ONVIF", "stream URL").
+# Use the camera's SUB stream (e.g. 640x360 or 1280x720): it is enough for counting and
+# much lighter than 4K.
+
+data_dir: data            # Docker sets CV_DATA_DIR=/data
+log_level: INFO
+heartbeat_interval_s: 30
+
+detector:
+  type: onnx
+  model: ${CV_MODELS:-models}/yolox_tiny.onnx    # Apache-2.0, downloaded on first start
+  model_license: Apache-2.0 (Megvii YOLOX)
+  conf: 0.2
+  device: auto
+
+privacy:
+  preview: blur          # the local web app pixelates people
+  snapshots: true        # one local frame may be saved to draw lines (set false if not allowed)
+
+alerts:
+  camera_offline_after_s: 300
+
+storage:
+  retention_days: 45     # numbers older than this are deleted on the device (covers a 1-month pilot)
+
+cameras:
+  - id: entrance
+    name: Entrance door
+    source:
+      uri: ${CAM1_URL}
+      rtsp_transport: tcp
+    classes: [person]
+    anchor: bottom_center
+    lines:   # draw these with the web app (countvision-edge app --config site.yaml --camera entrance)
+      - name: door
+        p1: [0.20, 0.60]
+        p2: [0.80, 0.60]
+        in_direction: to_right
+    scheduler:
+      target_fps: 10
+
+  - id: counter
+    name: Till / queue
+    source:
+      uri: ${CAM2_URL}
+      rtsp_transport: tcp
+    classes: [person]
+    zones:
+      - name: queue
+        kind: queue
+        polygon: [[0.10, 0.55], [0.60, 0.55], [0.60, 0.95], [0.10, 0.95]]
+    scheduler:
+      target_fps: 10

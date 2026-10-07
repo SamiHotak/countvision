@@ -3,6 +3,7 @@ rem CountVision local app - one command on Windows.
 rem   start.bat            count with your webcam (config: edge\configs\local.yaml)
 rem   start.bat --demo     demo video, no camera and no model needed
 rem   start.bat --phone    also open it on your phone (same Wi-Fi, needs the key link)
+rem   start.bat --count    counting only, no web page (all cameras, for a pilot PC)
 setlocal
 cd /d "%~dp0"
 
@@ -13,11 +14,11 @@ if errorlevel 1 goto no_python
 :venv_ok
 call ".venv\Scripts\activate.bat"
 
-python -c "import importlib.util as u, sys; sys.exit(0 if all(u.find_spec(m) for m in ('countvision_edge.app.main', 'fastapi', 'ruamel.yaml', 'ultralytics')) else 1)" 1>nul 2>nul
+python -c "import importlib.util as u, sys; sys.exit(0 if all(u.find_spec(m) for m in ('countvision_edge.supervisor', 'fastapi', 'ruamel.yaml', 'onnxruntime')) else 1)" 1>nul 2>nul
 if not errorlevel 1 goto installed
 echo Installing CountVision - first start or after an update. This can take a few minutes ...
 python -m pip install --upgrade pip
-pip install -e "edge[yolo]"
+pip install -e "edge[onnx]"
 if errorlevel 1 goto install_failed
 :installed
 
@@ -27,7 +28,13 @@ copy "edge\configs\example.yaml" "edge\configs\local.yaml" >nul
 echo Made edge\configs\local.yaml from example.yaml. Lines you draw are saved there.
 :config_ok
 if /I "%~1"=="--phone" goto phone
+if /I "%~1"=="--count" goto count
 countvision-edge app --config edge\configs\local.yaml %*
+goto end
+
+:count
+echo Counting all cameras of edge\configs\local.yaml. Close this window or press Ctrl+C to stop.
+countvision-edge run --config edge\configs\local.yaml
 goto end
 
 :phone

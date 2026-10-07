@@ -10,10 +10,10 @@ Python 3.10 or newer.
 cd countvision
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -e "edge[dev]"          # core + tests
-pip install -e "edge[yolo]"         # optional: Ultralytics YOLO (AGPL)
-pip install -e "edge[openvino]"     # optional: fast on Intel CPUs
-pip install -e "edge[onnx]"         # optional: ONNX Runtime
+pip install -e "edge[onnx]"         # core + ONNX Runtime (default detector YOLOX-Tiny, Apache-2.0)
+pip install -e "edge[dev]"          # + tests
+pip install -e "edge[openvino]"     # optional: OpenVINO for Intel CPUs
+pip install -e "edge[yolo]"         # optional: Ultralytics YOLO (AGPL-3.0)
 ```
 
 ## Try it in one minute (no camera, no model)
@@ -59,7 +59,11 @@ listens on this PC (127.0.0.1).
 | `countvision-edge snapshot --source 0 --out snap.jpg` | Save one frame (stays on this PC) to help you place lines |
 | `countvision-edge app --config configs/example.yaml` | Local web app: preview, draw lines, live counters, chart, CSV |
 | `countvision-edge app --demo` | The web app with a synthetic demo video |
-| `countvision-edge run --config configs/example.yaml --show` | Count live without the web app; `--show` opens a preview window |
+| `countvision-edge run --config site.yaml` | Count **all cameras** of the config (restarts, reconnects, `data/status.json`, offline alerts). `--camera <id>` for one |
+| `countvision-edge run --config configs/example.yaml --show` | One camera with a preview window (debugging) |
+| `countvision-edge health --config site.yaml` | Is counting running? Exit code 0 = healthy, 1 = not running, 2 = a camera alert |
+| `countvision-edge models list` / `models download yolox_tiny` | Known models (Apache-2.0); a missing known model is downloaded on first start |
+| `countvision-edge pilot-docs --info pilot.yaml` | Pilot papers: sign, privacy notice, agreement, AVV, DPIA, checklist (`docs/pilot/`) |
 | `countvision-edge report --db data/countvision.db` | Print the counts (`--json`, `--csv-dir`) |
 | `countvision-edge export --model yolo11n.pt --format openvino` | Convert a YOLO model for faster CPU use (result stays AGPL) |
 | `countvision-edge count-helper VIDEO` | Label the true counts of a video by hand (window, keys I/O/0-9) |
@@ -88,18 +92,37 @@ Secrets such as camera passwords go in environment variables: `${CAM1_RTSP_URL}`
 
 Models exported from YOLO weights stay AGPL. The licence is logged at start.
 
+## Several cameras (supervisor)
+
+`countvision-edge run` without `--show` starts one worker per camera. All share one detector
+(one model in memory) and one database. A crashed camera is restarted (1 s ... 60 s delay), a lost
+stream reconnects by itself (≤ 15 s backoff). Every 5 s `data/status.json` is written.
+A camera offline longer than `alerts.camera_offline_after_s` (default 300 s) gives a WARNING,
+`alert` in status.json and a `camera_offline` event (`camera_online` with the outage when back).
+
+Measured (phase 2 B, 2-core sandbox, YOLOX-Tiny, two real RTSP streams from MediaMTX): both
+cameras at 10 FPS; stream stopped → `offline` within 1 s; stream back → counting again after
+12–16 s; the other camera kept counting during the outage.
+
 ## Privacy
 
 Only these are stored: events, counts, zone numbers, coverage, heartbeats, and one heatmap PNG (numbers drawn as colour, no people). No video, no frames.
 
 The web app's live picture is made in memory only while a browser is watching, and is never saved. An uploaded video is deleted when counting ends.
+**Default `privacy.preview: blur`**: every detected person/vehicle is pixelated (also fresh detections
+that are not tracks yet) and the picture is limited to 640 px. `off` = no picture, `full` = setup only.
+
+No library phones home: ONNX Runtime telemetry (`ORT_DISABLE_TELEMETRY=1`) and Ultralytics events
+(`YOLO_OFFLINE=1`) are switched off when the package is imported. (ONNX Runtime 1.30 on Linux was
+seen sending telemetry to Microsoft before this.)
 
 ## Known limits
 
 - Speed estimate uses one scale for the whole picture. It is approximate.
-- One camera per process (several cameras: Phase 2 Session B). The web app shows one camera.
+- The web app shows one camera at a time (`--camera <id>`). Do not run the web app and
+  `run` on the same cameras at the same time: everything would be counted twice.
 - The web app has no login. Keep it on 127.0.0.1, or use the key link with `--host 0.0.0.0`.
-- Real RTSP and real webcam were tested with fakes only in CI. Please test your own camera.
+- RTSP was tested with MediaMTX test streams (phase 2 B), not yet with a real IP camera.
 - The RF-DETR wrapper is untested without weights (measured on Colab with `eval/colab/`).
 - COCO models do not recognise cars filmed from straight above (they see "cell phone"). Mount
   vehicle cameras at an angle.

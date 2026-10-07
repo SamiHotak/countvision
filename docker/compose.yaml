@@ -1,0 +1,81 @@
+# CountVision edge agent with Docker Compose. Run all commands in this docker/ folder.
+#
+#   First test (no camera needed, two looping test videos as RTSP cameras):
+#     copy .env.example .env            (Linux/macOS: cp .env.example .env)
+#     countvision-edge eval fetch        (or download the 2 videos, see README.md)
+#     docker compose --profile test up -d --build
+#     docker compose ps                  -> countvision is "healthy" after ~1-2 minutes
+#     docker compose logs -f countvision
+#
+#   Real cameras: edit .env (CAM1_URL ...) and config/config.yaml, then
+#     docker compose up -d --build
+#
+#   Draw lines in the web app (counting must be stopped, otherwise everything counts twice):
+#     docker compose stop countvision
+#     docker compose --profile setup up setup      -> open the link it prints (port 8000)
+#     Ctrl+C, then: docker compose start countvision
+name: countvision
+
+x-edge: &edge
+  image: countvision-edge:cpu
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  init: true
+  env_file:
+    - path: ${CV_ENV_FILE:-.env}
+      required: false
+  environment:
+    TZ: ${TZ:-Europe/Berlin}
+    CV_CONFIG: ${CV_CONFIG:-/config/config.yaml}
+  volumes:
+    - ${CV_CONFIG_HOST:-./config}:/config
+    - ${CV_DATA_HOST:-./data}:/data
+    - ./test-camera:/test:ro
+  # USB webcam on a Linux PC: uncomment (Docker Desktop on Windows/macOS cannot pass webcams).
+  # devices:
+  #   - /dev/video0:/dev/video0
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  countvision:
+    <<: *edge
+    restart: unless-stopped
+    command: ["run"]
+
+  setup:
+    <<: *edge
+    profiles: [setup]
+    command: ["app"]
+    ports:
+      - "8000:8000"
+
+  # NVIDIA GPU (Linux + NVIDIA driver + NVIDIA Container Toolkit). Use INSTEAD of "countvision":
+  #   docker compose --profile nvidia up -d --build countvision-gpu
+  countvision-gpu:
+    <<: *edge
+    profiles: [nvidia]
+    image: countvision-edge:nvidia
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.nvidia
+    restart: unless-stopped
+    command: ["run"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Two fake IP cameras that loop evaluation videos (for testing without a real camera).
+  test-camera:
+    profiles: [test]
+    image: bluenviron/mediamtx:1.15.1-ffmpeg
+    restart: unless-stopped
+    volumes:
+      - ./test-camera/mediamtx.yml:/mediamtx.yml:ro
+      - ${CV_VIDEOS_HOST:-../eval/videos}:/videos:ro

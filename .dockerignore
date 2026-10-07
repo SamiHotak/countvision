@@ -1,0 +1,10 @@
+# Only edge/ and docker/ are needed to build the images.
+**
+!edge/pyproject.toml
+!edge/README.md
+!edge/countvision_edge/**
+!edge/configs/**
+!docker/entrypoint.sh
+**/__pycache__
+**/*.pyc
+edge/configs/local*.yaml

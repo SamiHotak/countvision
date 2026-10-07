@@ -43,6 +43,9 @@ class FrameResult:
     tracks: list[TrackedObject]
     events: list[Event]
     proc_ms: float
+    # Boxes the detector found in this frame (after the class filter), including objects that
+    # are not yet confirmed tracks. Used only to pixelate people in the preview.
+    boxes: np.ndarray = field(default_factory=lambda: np.zeros((0, 4), dtype=np.float32))
 
 
 @dataclass
@@ -187,7 +190,7 @@ class CameraPipeline:
         elapsed = time.perf_counter() - started
         self.scheduler.record_processing(elapsed)
         self.heartbeat.frame_processed(elapsed)
-        return FrameResult(frame, len(detections), tracks, events, elapsed * 1000.0)
+        return FrameResult(frame, len(detections), tracks, events, elapsed * 1000.0, detections.xyxy)
 
     def _filter(self, detections: Detections) -> Detections:
         if self._class_ids is None or len(detections) == 0:
