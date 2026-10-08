@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "countvision-cloud"
+version = "0.1.0"
+description = "CountVision cloud API: accounts, organizations, roles, invites (and later sites, cameras, devices, dashboards)."
+requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+# Licences: FastAPI/Starlette/pydantic/SQLAlchemy/Alembic/uvicorn/httpx/redis-py/email-validator = MIT or BSD,
+# Celery = BSD, argon2-cffi = MIT, psycopg = LGPL-3.0 (used as a library: fine for a closed SaaS too).
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.4",
+    "email-validator>=2.1",
+    "argon2-cffi>=23.1",
+    "redis>=5.0",
+    "celery>=5.4",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+countvision-cloud = "countvision_cloud.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["countvision_cloud*"]
+
+[tool.setuptools.package-data]
+"countvision_cloud" = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:celery.*", "ignore:Using .httpx. with .starlette.testclient. is deprecated"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+"countvision_cloud/migrations/*" = ["E501"]

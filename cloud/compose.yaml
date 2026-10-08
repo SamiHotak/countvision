@@ -1,0 +1,134 @@
+# CountVision cloud for LOCAL development (everything on your PC, 0 EUR).
+# Run all commands in this cloud/ folder.
+#
+#   copy .env.example .env               (Linux/macOS: cp .env.example .env)
+#   docker compose up -d --build         first time: 5-15 minutes (downloads + builds)
+#   open http://localhost:3000           the web app
+#   open http://localhost:8025           Mailpit: all emails the app sends land here
+#   docker compose logs -f api worker    follow the logs
+#   docker compose down                  stop (data stays in the volumes)
+#   docker compose down -v               stop AND delete all data
+#
+# Only for development: passwords are simple and ports are bound to 127.0.0.1 only.
+# Production (Hetzner, Caddy, backups) comes in Phase 5.
+name: countvision-cloud
+
+x-api-env: &api-env
+  CV_ENVIRONMENT: development
+  CV_DATABASE_URL: postgresql+psycopg://countvision:countvision@db:5432/countvision
+  CV_REDIS_URL: redis://redis:6379/0
+  CV_WEB_URL: ${CV_WEB_URL:-http://localhost:3000}
+  CV_SECRET_KEY: ${CV_SECRET_KEY:-dev-secret-change-me-dev-secret-change-me}
+  CV_EMAIL_BACKEND: smtp
+  CV_SMTP_HOST: mailpit
+  CV_SMTP_PORT: "1025"
+  CV_EMAIL_DELIVERY: celery
+  CV_GOOGLE_CLIENT_ID: ${CV_GOOGLE_CLIENT_ID:-}
+  CV_GOOGLE_CLIENT_SECRET: ${CV_GOOGLE_CLIENT_SECRET:-}
+  CV_LOG_LEVEL: ${CV_LOG_LEVEL:-INFO}
+  TZ: UTC
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+services:
+  # PostgreSQL 16 with the TimescaleDB extension (for the counting time series from Phase 3 B).
+  # Licence: PostgreSQL = PostgreSQL licence; TimescaleDB community features = Timescale License
+  # (free to use inside your own SaaS; you may not sell "TimescaleDB as a service").
+  db:
+    image: timescale/timescaledb:2.30.2-pg16
+    environment:
+      POSTGRES_USER: countvision
+      POSTGRES_PASSWORD: countvision
+      POSTGRES_DB: countvision
+      TIMESCALEDB_TELEMETRY: "off"
+    command: ["postgres", "-c", "timescaledb.telemetry_level=off"]
+    ports: ["127.0.0.1:5433:5432"]   # 5433 on your PC, so a local Postgres on 5432 does not clash
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U countvision -d countvision"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  # Valkey = the open-source (BSD) continuation of Redis 7.2, same protocol and commands.
+  # (Redis itself changed its licence in 2024; Valkey avoids that question.)
+  redis:
+    image: valkey/valkey:8.1-alpine
+    command: ["valkey-server", "--save", "60", "1", "--appendonly", "no"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+
+  # Mailpit catches every email (nothing is really sent). Web UI: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.31
+    ports: ["127.0.0.1:8025:8025", "127.0.0.1:1025:1025"]
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    restart: unless-stopped
+    logging: *logging
+
+  # FastAPI. Waits for db + redis, runs the migrations, then serves. Docs: http://localhost:8001/api/docs
+  api:
+    build: ./api
+    image: countvision-cloud-api:dev
+    environment: *api-env
+    ports: ["127.0.0.1:8001:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+    logging: *logging
+
+  # Background jobs (emails now; reports, alerts, video analysis later).
+  worker:
+    image: countvision-cloud-api:dev
+    environment: *api-env
+    command: ["celery", "-A", "countvision_cloud.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    depends_on:
+      api: {condition: service_healthy}   # api ran the migrations
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+    logging: *logging
+
+  # Timers (cleanup every hour, heartbeat every minute).
+  beat:
+    image: countvision-cloud-api:dev
+    environment: *api-env
+    command: ["celery", "-A", "countvision_cloud.celery_app", "beat", "--loglevel=INFO",
+              "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+    logging: *logging
+
+  # Next.js web app. The browser only talks to this; /api/* is passed on to "api".
+  web:
+    build:
+      context: ./web
+      args:
+        API_URL: http://api:8000
+    image: countvision-cloud-web:dev
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on:
+      api: {condition: service_healthy}
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  db-data:
+  redis-data:

@@ -43,3 +43,9 @@ docker/data/
 /models/
 pilot_*.yaml
 pilot_docs*/
+# cloud: local settings, Node build output, browser test results
+cloud/.env
+cloud/web/node_modules/
+cloud/web/.next/
+cloud/web/test-results/
+cloud/web/playwright-report/

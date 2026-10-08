@@ -1,0 +1,81 @@
+@import "tailwindcss";
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/500.css";
+@import "@fontsource/barlow/600.css";
+
+/* CountVision "control room": the same tokens as the edge app (edge/.../static/app.css).
+   Dark blue-slate, one teal accent, calm text, big tabular numbers.
+   The font is self-hosted (no Google Fonts request: GDPR). */
+
+@theme {
+  --color-ink: #0e1820;
+  --color-panel: #13202a;
+  --color-raise: #1a2a36;
+  --color-rule: #233746;
+  --color-text: #dce6ea;
+  --color-muted: #7f96a2;
+  --color-faint: #4d6370;
+  --color-accent: #19c3b1;
+  --color-accent-ink: #062621;
+  --color-warn: #e8b04b;
+  --color-danger: #e5675f;
+
+  --font-sans: "Barlow", "Bahnschrift", "DIN Alternate", "Segoe UI", system-ui, sans-serif;
+
+  --text-xs: 13px;
+  --text-sm: 14px;
+  --text-base: 15px;
+  --text-lg: 17px;
+  --text-xl: 22px;
+  --text-2xl: 30px;
+  --text-num: 56px;
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+}
+
+/* Base styles in the base layer, so Tailwind utilities (text-accent ...) can override them. */
+@layer base {
+  html {
+    background: var(--color-ink);
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-ink);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+    min-height: 100dvh;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  a {
+    color: inherit;
+  }
+}
+
+/* The counting line on the sign-in screens: a person walks through the line, IN goes up by one. */
+@keyframes walk {
+  0% { transform: translateX(-34px); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateX(320px); opacity: 0; }
+}
+.walker {
+  animation: walk 4.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .walker { animation: none; opacity: 1; transform: translateX(80px); }
+}

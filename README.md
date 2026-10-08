@@ -27,6 +27,9 @@ today's chart and CSV download.
   detector. Results and recommendation: [`eval/results.md`](eval/results.md).
 - Phase 2, Session B: several cameras per device, Docker images, one-line installers,
   privacy defaults, pilot pack ([`docs/pilot/`](docs/pilot/README.md)).
+- Phase 3, Session A: the cloud skeleton ([`cloud/`](cloud/README.md)): accounts (email + Google),
+  organizations, roles, invitations, activity log, background emails. Local start:
+  `cd cloud`, `copy .env.example .env`, `docker compose up -d --build`, open http://localhost:3000.
 
 ## Install on a pilot device (one line)
 
@@ -41,7 +44,6 @@ curl -fsSL https://raw.githubusercontent.com/SamiHotak/countvision/main/install.
 ```
 
 Docker by hand: [`docker/README.md`](docker/README.md).
-- Cloud dashboard: later phases.
 
 ## Folders
 
@@ -52,9 +54,10 @@ Docker by hand: [`docker/README.md`](docker/README.md).
 | `start.bat` | Windows: install on first start, then open the local app (`--count`: counting only). |
 | `install.ps1`, `install.sh` | One-line installers (Windows / Linux with Docker). |
 | `docker/` | Docker images (CPU, NVIDIA, Jetson), compose file, test RTSP cameras. |
+| `cloud/` | The SaaS app: `api/` (FastAPI, Postgres/TimescaleDB, Redis, Celery) and `web/` (Next.js). See `cloud/README.md`. |
 | `docs/pilot/` | Pilot pack: install guide, sign, privacy notice, agreement, AVV, DPIA, checklist. |
 | `eval/` | Hand labels, accuracy and speed results, `laptop.bat`, Colab notebook. See `eval/README.md`. |
-| `.github/workflows/` | CI: lint, tests and browser tests on every push (CPU only). |
+| `.github/workflows/` | CI: lint, tests and browser tests on every push (edge, cloud, Docker; CPU only). |
 
 ## Licence
 
