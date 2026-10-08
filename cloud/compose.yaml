@@ -94,6 +94,7 @@ services:
   # Background jobs (emails now; reports, alerts, video analysis later).
   worker:
     image: countvision-cloud-api:dev
+    pull_policy: never   # built by the "api" service, never downloaded
     environment: *api-env
     command: ["celery", "-A", "countvision_cloud.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
     depends_on:
@@ -106,6 +107,7 @@ services:
   # Timers (cleanup every hour, heartbeat every minute).
   beat:
     image: countvision-cloud-api:dev
+    pull_policy: never
     environment: *api-env
     command: ["celery", "-A", "countvision_cloud.celery_app", "beat", "--loglevel=INFO",
               "--schedule=/tmp/celerybeat-schedule"]
