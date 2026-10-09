@@ -96,11 +96,16 @@ services:
     image: countvision-cloud-api:dev
     pull_policy: never   # built by the "api" service, never downloaded
     environment: *api-env
-    command: ["celery", "-A", "countvision_cloud.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    command: ["celery", "-A", "countvision_cloud.celery_app", "worker", "--loglevel=INFO", "--concurrency=2",
+              "--hostname=worker@%h"]
     depends_on:
       api: {condition: service_healthy}   # api ran the migrations
-    healthcheck:
-      disable: true
+    healthcheck:   # healthy = the worker answers a ping through Redis
+      test: ["CMD-SHELL", "celery -A countvision_cloud.celery_app inspect ping -d worker@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
     restart: unless-stopped
     logging: *logging
 
@@ -113,8 +118,12 @@ services:
               "--schedule=/tmp/celerybeat-schedule"]
     depends_on:
       api: {condition: service_healthy}
-    healthcheck:
-      disable: true
+    healthcheck:   # healthy = a timer task ran in the last 3 minutes (beat -> Redis -> worker)
+      test: ["CMD", "python", "-c", "import sys,time; from countvision_cloud.redis_client import get_redis; from countvision_cloud.saas.routers.health import HEARTBEAT_KEY; v=get_redis().get(HEARTBEAT_KEY); sys.exit(0 if v and time.time()-int(v) < 180 else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
     restart: unless-stopped
     logging: *logging
 
