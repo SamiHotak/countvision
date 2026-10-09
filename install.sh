@@ -170,6 +170,8 @@ case "\${1:-status}" in
   status)  dc ps; echo; dc exec -T "\$SERVICE" countvision-entrypoint health ;;
   logs)    dc logs -f --tail 100 "\$SERVICE" ;;
   report)  dc exec -T "\$SERVICE" countvision-edge report --db /data/countvision.db ;;
+  pair)    shift; dc run --rm --no-deps "\$SERVICE" pair "\$@" && dc up -d --force-recreate "\$SERVICE" ;;
+  cloud)   dc exec -T "\$SERVICE" countvision-edge cloud-status ;;
   start)   dc up -d "\$SERVICE" ;;
   stop)    dc stop "\$SERVICE" ;;
   restart) dc up -d --force-recreate "\$SERVICE" ;;
@@ -208,5 +210,7 @@ Use sudo (or add your user to the "docker" group):
   countvision config     edit cameras, lines, zones  ($DIR/config/config.yaml)
   countvision env        edit camera addresses/passwords ($DIR/.env)
   countvision report     the numbers so far
+  countvision pair --url https://<cloud> --code XXXX-XXXX   connect to the CountVision cloud
+  countvision cloud      cloud connection and upload backlog
   countvision update     newest version (settings and numbers are kept)
 EOF

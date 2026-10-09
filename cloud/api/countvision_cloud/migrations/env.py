@@ -6,6 +6,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from countvision_cloud.db import Base
+from countvision_cloud.product import models as _product  # noqa: F401  (register tables)
 from countvision_cloud.saas import models  # noqa: F401  (register tables)
 from countvision_cloud.settings import get_settings
 

@@ -144,3 +144,85 @@ export const fmtDate = (iso: string) => dateFmt.format(new Date(iso));
 export const fmtDateTime = (iso: string) => timeFmt.format(new Date(iso));
 
 export interface AcceptOut { org_id: string; org_name: string }
+
+// --- sites, devices, cameras (Phase 3 B) ------------------------------------------------------
+
+export interface Site {
+  id: string;
+  name: string;
+  timezone: string;
+  address: string | null;
+  created_at: string;
+  device_count: number;
+  camera_count: number;
+}
+
+export interface PairingCode {
+  id: string;
+  code: string | null;
+  site_id: string;
+  device_name: string;
+  expires_at: string;
+  status: "pending" | "used" | "expired";
+  device_id: string | null;
+}
+
+export interface Device {
+  id: string;
+  name: string;
+  site_id: string;
+  site_name: string;
+  edge_device_id: string;
+  agent_version: string | null;
+  online: boolean;
+  last_seen_at: string | null;
+  last_data_at: string | null;
+  paired_at: string;
+  revoked: boolean;
+  camera_count: number;
+  cameras_online: number;
+  detector: { name?: string; runtime?: string; device?: string; license?: string } | null;
+  upload: { pending?: number; last_success?: number | null; state?: string } | null;
+}
+
+export interface Camera {
+  id: string;
+  edge_camera_id: string;
+  name: string;
+  state: string | null;
+  connected: boolean | null;
+  fps: number | null;
+  reconnects: number | null;
+  alert: string | null;
+  lines: string[];
+  zones: string[];
+  last_seen_at: string | null;
+  today: Record<string, { in: number; out: number }>;
+}
+
+export interface DeviceDetail extends Device {
+  cameras: Camera[];
+  site_timezone: string;
+  batches_24h: number;
+  rows_24h: number;
+}
+
+const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+
+/** "12 seconds ago", "3 minutes ago", "yesterday" ... */
+export function timeAgo(iso: string | null | undefined, now: number = Date.now()): string {
+  if (!iso) return "never";
+  const s = Math.round((new Date(iso).getTime() - now) / 1000);
+  const abs = Math.abs(s);
+  if (abs < 10) return "just now";
+  if (abs < 60) return rtf.format(s, "second");
+  if (abs < 3600) return rtf.format(Math.round(s / 60), "minute");
+  if (abs < 86400) return rtf.format(Math.round(s / 3600), "hour");
+  return rtf.format(Math.round(s / 86400), "day");
+}
+
+export const COMMON_TIMEZONES = [
+  "Europe/Berlin", "Europe/Vienna", "Europe/Zurich", "Europe/Amsterdam", "Europe/Brussels", "Europe/Paris",
+  "Europe/London", "Europe/Madrid", "Europe/Rome", "Europe/Warsaw", "Europe/Istanbul", "Asia/Kabul",
+  "Asia/Dubai", "America/New_York", "America/Los_Angeles", "UTC",
+];

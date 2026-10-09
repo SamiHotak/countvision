@@ -272,6 +272,25 @@ class AlertsConfig(_Model):
     camera_offline_after_s: float = Field(300.0, gt=0)  # target: alert if offline > 5 min
 
 
+class CloudConfig(_Model):
+    """Upload numbers to the CountVision cloud (only after "countvision-edge pair").
+
+    enabled:            set false to keep everything local even when paired.
+    url:                override the cloud address saved at pairing (env CV_CLOUD_URL), e.g.
+                        http://host.docker.internal:3000 when the agent runs in Docker.
+    upload_interval_s:  how often to upload (also the "I am alive" signal; the cloud shows a
+                        device offline after 90 s without contact).
+    batch_rows:         max rows per table and upload. A backlog after an outage is sent in
+                        several uploads one after the other.
+    """
+
+    enabled: bool = True
+    url: str | None = None
+    upload_interval_s: float = Field(15.0, ge=2, le=60)
+    batch_rows: int = Field(1000, ge=10, le=5000)
+    timeout_s: float = Field(20.0, gt=0)
+
+
 class StorageConfig(_Model):
     db_path: str | None = None  # default: <data_dir>/countvision.db
     retention_days: int = Field(30, ge=1)  # numbers older than this are deleted
@@ -288,6 +307,7 @@ class EdgeConfig(_Model):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     alerts: AlertsConfig = Field(default_factory=AlertsConfig)
+    cloud: CloudConfig = Field(default_factory=CloudConfig)
     cameras: list[CameraConfig] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -304,17 +324,7 @@ class EdgeConfig(_Model):
 
     def resolve_device_id(self) -> str:
         """The configured id, or a random id that is created once and kept in data_dir."""
-        if self.device_id:
-            return self.device_id
-        path = Path(self.data_dir) / "device_id"
-        if path.exists():
-            value = path.read_text(encoding="utf-8").strip()
-            if value:
-                return value
-        path.parent.mkdir(parents=True, exist_ok=True)
-        value = f"edge-{uuid.uuid4().hex[:12]}"
-        path.write_text(value + "\n", encoding="utf-8")
-        return value
+        return self.device_id or device_id_for(self.data_dir)
 
     def camera(self, camera_id: str | None = None) -> CameraConfig:
         """Return one camera. With no id, the config must contain exactly one camera."""
@@ -333,6 +343,19 @@ class EdgeConfig(_Model):
 
 
 # --------------------------------------------------------------------------- helpers
+
+
+def device_id_for(data_dir: str | Path) -> str:
+    """The random device id kept in <data_dir>/device_id (created on first use)."""
+    path = Path(data_dir) / "device_id"
+    if path.exists():
+        value = path.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    value = f"edge-{uuid.uuid4().hex[:12]}"
+    path.write_text(value + "\n", encoding="utf-8")
+    return value
 
 
 def redact_uri(uri: str) -> str:
@@ -363,7 +386,7 @@ def expand_env(value: Any, env: Mapping[str, str] | None = None) -> Any:
 
 def parse_config(data: Mapping[str, Any], env: Mapping[str, str] | None = None) -> EdgeConfig:
     """Validate a config dict. Environment overrides: CV_DATA_DIR, CV_DB_PATH, CV_LOG_LEVEL,
-    CV_DEVICE_ID, CV_PREVIEW (blur | off | full)."""
+    CV_DEVICE_ID, CV_PREVIEW (blur | off | full), CV_CLOUD_URL."""
     environ = os.environ if env is None else env
     expanded = expand_env(dict(data), environ)
     overrides = {
@@ -372,6 +395,7 @@ def parse_config(data: Mapping[str, Any], env: Mapping[str, str] | None = None) 
         "CV_DEVICE_ID": ("device_id",),
         "CV_DB_PATH": ("storage", "db_path"),
         "CV_PREVIEW": ("privacy", "preview"),
+        "CV_CLOUD_URL": ("cloud", "url"),
     }
     for variable, path in overrides.items():
         if environ.get(variable):

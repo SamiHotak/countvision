@@ -195,6 +195,38 @@ jobs:
           grep -q "Confirm your email" /tmp/mail.json
           docker compose -f cloud/compose.yaml exec -T db psql -U countvision -tAc \
             "SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'" | grep -E "^[0-9]"
+      - name: Device pairing and upload (hypertables in real TimescaleDB)
+        run: |
+          python3 - <<'PY'
+          import json, time, urllib.request
+          base = "http://localhost:3000"
+          def call(method, path, body=None, headers=None, cookie=None):
+              h = {"Content-Type": "application/json", "X-CountVision": "1", **(headers or {})}
+              if cookie: h["Cookie"] = cookie
+              req = urllib.request.Request(base + path, data=json.dumps(body).encode() if body is not None else None,
+                                           method=method, headers=h)
+              with urllib.request.urlopen(req) as r:
+                  return json.loads(r.read()), r.headers.get("Set-Cookie")
+          _, cookie = call("POST", "/api/auth/login", {"email": "ci@example.com", "password": "a-long-ci-password"})
+          cookie = cookie.split(";")[0]
+          org = call("GET", "/api/orgs", cookie=cookie)[0][0]
+          site = call("POST", f"/api/orgs/{org['id']}/sites", {"name": "CI Site"}, cookie=cookie)[0]
+          code = call("POST", f"/api/orgs/{org['id']}/pairing-codes", {"site_id": site["id"], "device_name": "CI PC"}, cookie=cookie)[0]
+          dev = call("POST", "/api/device/pair", {"code": code["code"], "edge_device_id": "edge-ci"})[0]
+          now = int(time.time()); minute = now - now % 60 - 60
+          auth = {"Authorization": "Bearer " + dev["token"]}
+          batch = {"batch_id": "ci-1", "cameras": [{"id": "door", "state": "running", "connected": True}],
+                   "line_counts": [{"camera_id": "door", "window_start": minute, "line": "entrance", "class_name": "*", "in_count": 5, "out_count": 2}],
+                   "events": [{"event_id": "e1", "camera_id": "door", "kind": "line_cross", "ts": minute + 5, "name": "entrance", "direction": "in"}]}
+          print(call("POST", "/api/device/ingest", batch, headers=auth)[0])
+          print(call("POST", "/api/device/ingest", batch, headers=auth)[0])  # repeat: no doubles
+          detail = call("GET", f"/api/orgs/{org['id']}/devices/{dev['device_id']}", cookie=cookie)[0]
+          assert detail["online"] and detail["cameras"][0]["today"]["entrance"] == {"in": 5, "out": 2}, detail
+          print("device online, today IN 5 / OUT 2")
+          PY
+          docker compose -f cloud/compose.yaml exec -T db psql -U countvision -tAc \
+            "SELECT hypertable_name FROM timescaledb_information.hypertables ORDER BY 1" | tee /tmp/ht.txt
+          grep -q line_counts /tmp/ht.txt
       - name: Logs
         if: always()
         working-directory: cloud

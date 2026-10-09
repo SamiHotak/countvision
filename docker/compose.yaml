@@ -28,6 +28,9 @@ x-edge: &edge
   environment:
     TZ: ${TZ:-Europe/Berlin}
     CV_CONFIG: ${CV_CONFIG:-/config/config.yaml}
+  # Lets the agent reach a CountVision cloud running on the same PC (http://host.docker.internal:3000).
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   volumes:
     - ${CV_CONFIG_HOST:-./config}:/config
     - ${CV_DATA_HOST:-./data}:/data

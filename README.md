@@ -30,6 +30,8 @@ today's chart and CSV download.
 - Phase 3, Session A: the cloud skeleton ([`cloud/`](cloud/README.md)): accounts (email + Google),
   organizations, roles, invitations, activity log, background emails. Local start:
   `cd cloud`, `copy .env.example .env`, `docker compose up -d --build`, open http://localhost:3000.
+- Phase 3, Session B: sites, devices with one-time pairing codes, the edge agent uploads its numbers
+  (and replays them after a network outage), device status page with today's counts.
 
 ## Install on a pilot device (one line)
 

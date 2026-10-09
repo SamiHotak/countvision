@@ -206,6 +206,100 @@ def cmd_health(args: argparse.Namespace) -> int:
     return report.exit_code
 
 
+# ----------------------------------------------------------------------------- cloud
+
+
+def _data_dir(args: argparse.Namespace) -> tuple[Path, str]:
+    """(data dir, edge device id) from --config, --data-dir, CV_DATA_DIR or ./data."""
+    from .config import device_id_for
+
+    if getattr(args, "config", None):
+        cfg = load_config(args.config)
+        return Path(cfg.data_dir), cfg.resolve_device_id()
+    data_dir = Path(args.data_dir or os.environ.get("CV_DATA_DIR") or "data")
+    return data_dir, os.environ.get("CV_DEVICE_ID") or device_id_for(data_dir)
+
+
+def cmd_pair(args: argparse.Namespace) -> int:
+    """Connect this device to an organization in the cloud with a one-time code."""
+    from .cloud import Credentials, pair
+
+    data_dir, edge_id = _data_dir(args)
+    old = Credentials.load(data_dir)
+    if old is not None and not args.force:
+        print(f"This device is already connected to '{old.organization}' (site '{old.site}', "
+              f"{old.url}).\nTo connect it again, add --force.", file=sys.stderr)
+        return 1
+    creds = pair(args.url, args.code, data_dir, edge_id)
+    print(f"Connected. Organization: {creds.organization}, site: {creds.site}, device: {creds.device_name}")
+    print(f"Saved in {Credentials.path(data_dir)} (keep this file private: it contains the device token).")
+    print("Restart the counting service so it starts uploading (Docker: docker compose restart countvision).")
+    return 0
+
+
+def cmd_unpair(args: argparse.Namespace) -> int:
+    from .cloud import Credentials
+
+    data_dir, _ = _data_dir(args)
+    path = Credentials.path(data_dir)
+    if not path.exists():
+        print("This device is not connected to a cloud.")
+        return 0
+    path.unlink()
+    print(f"Removed {path}. The device counts locally only. (Also remove it in the web app: Devices.)")
+    return 0
+
+
+def cmd_cloud_status(args: argparse.Namespace) -> int:
+    """Check the connection: who am I in the cloud, how many rows wait for upload."""
+    from .cloud import CloudError, Credentials, normalize_url, request_json
+
+    data_dir, _ = _data_dir(args)
+    creds = Credentials.load(data_dir)
+    if creds is None:
+        print("Not connected to a cloud. Connect with: countvision-edge pair --url <address> --code <code>")
+        return 1
+    url = normalize_url(args.url or os.environ.get("CV_CLOUD_URL") or creds.url)
+    print(f"Cloud: {url}\nDevice: {creds.device_name} (site {creds.site}, organization {creds.organization})")
+    db = Path(args.db) if args.db else data_dir / "countvision.db"
+    if db.exists():
+        buffer = SqliteBuffer(db)
+        print(f"Rows waiting for upload: {buffer.count_unsent()}")
+        buffer.close()
+    try:
+        me = request_json("GET", f"{url}/api/device/me", token=creds.token, timeout=15)
+    except CloudError as exc:
+        print(f"Connection check FAILED: {exc}", file=sys.stderr)
+        return 2
+    print(f"Connection OK: the cloud knows this device as '{me['name']}' at site '{me['site']}'.")
+    return 0
+
+
+def cmd_upload(args: argparse.Namespace) -> int:
+    """Send everything that is waiting in the buffer now (normally "run" does this by itself)."""
+    from .cloud import CloudError, CloudUploader, Credentials
+
+    cfg = load_config(args.config)
+    creds = Credentials.load(cfg.data_dir)
+    if creds is None:
+        raise CountVisionError("Not connected to a cloud. First: countvision-edge pair --url ... --code ...")
+    buffer = SqliteBuffer(cfg.db_file())
+    before = buffer.count_unsent()
+    up = CloudUploader(buffer, creds, url=cfg.cloud.url, batch_rows=cfg.cloud.batch_rows,
+                       timeout_s=cfg.cloud.timeout_s)
+    try:
+        while up.upload_once():
+            pass
+    except CloudError as exc:
+        print(f"Upload failed: {exc}. {buffer.count_unsent()} rows are still waiting.", file=sys.stderr)
+        buffer.close()
+        return 2
+    left = buffer.count_unsent()
+    buffer.close()
+    print(f"Uploaded {before - left} rows to {up.url}. Waiting: {left}.")
+    return 0
+
+
 # ------------------------------------------------------------------------------ demo
 
 
@@ -452,6 +546,30 @@ def build_parser() -> argparse.ArgumentParser:
     app.add_argument("--no-browser", action="store_true", help="Do not open the browser")
     app.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     app.set_defaults(func=cmd_app)
+
+    pair_p = sub.add_parser("pair", help="Connect this device to the CountVision cloud (one-time code)")
+    pair_p.add_argument("--url", required=True, help="Cloud address, e.g. https://app.countvision.de")
+    pair_p.add_argument("--code", required=True, help="Pairing code from the web app (Devices -> Add device)")
+    pair_p.add_argument("--config", help="Config file (for data_dir and device id)")
+    pair_p.add_argument("--data-dir", help="Data folder (default: CV_DATA_DIR or ./data)")
+    pair_p.add_argument("--force", action="store_true", help="Replace an existing connection")
+    pair_p.set_defaults(func=cmd_pair)
+
+    unpair = sub.add_parser("unpair", help="Forget the cloud connection (count locally only)")
+    unpair.add_argument("--config")
+    unpair.add_argument("--data-dir")
+    unpair.set_defaults(func=cmd_unpair)
+
+    cstat = sub.add_parser("cloud-status", help="Check the cloud connection and the upload backlog")
+    cstat.add_argument("--config")
+    cstat.add_argument("--data-dir")
+    cstat.add_argument("--db", help="Database (default: <data_dir>/countvision.db)")
+    cstat.add_argument("--url", help="Override the cloud address (default: the one saved at pairing)")
+    cstat.set_defaults(func=cmd_cloud_status)
+
+    upload = sub.add_parser("upload", help="Send the waiting numbers to the cloud now")
+    upload.add_argument("--config", required=True)
+    upload.set_defaults(func=cmd_upload)
 
     health = sub.add_parser("health", help="Is the counting service running? (exit 0 = healthy)")
     health.add_argument("--config", help="Config file (to find data_dir)")

@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, Response
 
 from . import __version__
 from .logging_setup import setup_logging
+from .product.routers import device_api, manage
 from .saas.errors import install_error_handlers
 from .saas.routers import auth, dev, health, me, orgs
 from .settings import get_settings
@@ -39,7 +40,9 @@ def create_app() -> FastAPI:
     async def guard(request: Request, call_next) -> Response:
         # CSRF: every state-changing call must send a custom header. Browsers cannot add it to
         # cross-site form posts, and we do not allow cross-origin requests (no CORS).
-        if request.method in UNSAFE and request.url.path.startswith("/api/") \
+        # The device API (/api/device/*) uses a Bearer token, not cookies, so it needs no CSRF header.
+        path = request.url.path
+        if request.method in UNSAFE and path.startswith("/api/") and not path.startswith("/api/device/") \
                 and request.headers.get(CSRF_HEADER) != "1":
             return JSONResponse({"error": {"code": "csrf", "message": "Missing X-CountVision header."}},
                                 status_code=403)
@@ -53,7 +56,8 @@ def create_app() -> FastAPI:
             log.info("%s %s -> %s (%.0f ms)", request.method, request.url.path, response.status_code, ms)
         return response
 
-    for router in (health.router, auth.router, me.router, orgs.router, orgs.invite_router):
+    for router in (health.router, auth.router, me.router, orgs.router, orgs.invite_router, manage.router,
+                   device_api.router):
         app.include_router(router)
     if settings.environment != "production" and settings.email_backend == "memory":
         app.include_router(dev.router)

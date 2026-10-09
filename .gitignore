@@ -49,3 +49,5 @@ cloud/web/node_modules/
 cloud/web/.next/
 cloud/web/test-results/
 cloud/web/playwright-report/
+# Redis/Valkey snapshot files from local test servers
+*.rdb

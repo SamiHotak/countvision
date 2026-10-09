@@ -50,8 +50,33 @@ browser ──> web (Next.js, :3000) ──/api/*──> api (FastAPI) ──> P
 - Backend layers: `routers` (HTTP) -> `services` (rules: who may do what) -> `repositories` (SQL) -> `models`.
 - `countvision_cloud/saas/` has the product-neutral basics (accounts, organizations, roles, invites,
   emails, audit log). It knows nothing about cameras, so it can be reused for other products.
+- `countvision_cloud/product/` is CountVision itself: sites, devices (pairing, tokens, upload API),
+  cameras and the counting data (TimescaleDB hypertables when the extension is there).
+- Edge agents talk to `/api/device/*` with `Authorization: Bearer cvd_...` (no cookies, no CSRF header).
 
-## What works (Phase 3 Session A)
+## Connect an edge device (Phase 3 Session B)
+
+1. Web app: **Sites → Add site**, then **Devices → Add device**. You get a code like `K7QF-3MXP`
+   (15 minutes, one use) and the exact command for the device.
+2. On the device (Windows, in the countvision folder):
+   ```powershell
+   .venv\Scripts\countvision-edge pair --config edge\configs\local.yaml --url http://localhost:3000 --code K7QF-3MXP
+   .\start.bat --count
+   ```
+   Edge in Docker on the same PC: see `docker/README.md` (use `http://host.docker.internal:3000`).
+3. The device page shows Online, the cameras, FPS and today's IN/OUT per line. It refreshes every 10 s.
+   Pull the network cable: the device keeps counting; after reconnecting it sends everything it missed.
+
+Upload API (`POST /api/device/ingest`): batches of minute rows (line counts, zone stats, coverage),
+events, heartbeats and camera states; up to 5000 rows per list. Minute rows are stored with
+"insert or overwrite" and events once, so a repeated batch changes nothing. Rows more than 1 day in
+the future or older than 400 days are rejected and counted. A device counts as offline after 90 s
+without contact. Removing a device makes its token useless at once; its numbers stay.
+
+## What works (Phase 3 Sessions A and B)
+
+- Sites (name, address, time zone), devices with one-time pairing codes, device tokens (stored hashed),
+  automatic cameras, upload API, device page with live state and today's counts, remove / delete devices.
 
 - Sign up with email + password, confirm the email by link, log in/out, "forgot password" by email,
   change password, log out other devices, delete account.
@@ -112,7 +137,7 @@ npm run dev
 
 ```powershell
 docker compose up -d db redis                       # in cloud\
-pytest cloud/api/tests                              # API: 40 tests, real Postgres + Redis
+pytest cloud/api/tests                              # API: 51 tests, real Postgres + Redis
 
 # Browser tests: API with the in-memory mailbox + built web app
 $env:CV_EMAIL_BACKEND="memory"; $env:CV_EMAIL_DELIVERY="sync"; $env:CV_SIGNUPS_PER_IP_HOUR="1000"

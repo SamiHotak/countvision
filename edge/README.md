@@ -62,6 +62,10 @@ listens on this PC (127.0.0.1).
 | `countvision-edge run --config site.yaml` | Count **all cameras** of the config (restarts, reconnects, `data/status.json`, offline alerts). `--camera <id>` for one |
 | `countvision-edge run --config configs/example.yaml --show` | One camera with a preview window (debugging) |
 | `countvision-edge health --config site.yaml` | Is counting running? Exit code 0 = healthy, 1 = not running, 2 = a camera alert |
+| `countvision-edge pair --config site.yaml --url https://<cloud> --code XXXX-XXXX` | Connect this device to the CountVision cloud (code from the web app: Devices → Add device) |
+| `countvision-edge cloud-status --config site.yaml` | Is the cloud reachable, how many rows wait for upload |
+| `countvision-edge upload --config site.yaml` | Send the waiting numbers now (normally `run` does it every 15 s) |
+| `countvision-edge unpair --config site.yaml` | Forget the cloud connection (count locally only) |
 | `countvision-edge models list` / `models download yolox_tiny` | Known models (Apache-2.0); a missing known model is downloaded on first start |
 | `countvision-edge pilot-docs --info pilot.yaml` | Pilot papers: sign, privacy notice, agreement, AVV, DPIA, checklist (`docs/pilot/`) |
 | `countvision-edge report --db data/countvision.db` | Print the counts (`--json`, `--csv-dir`) |
@@ -103,6 +107,27 @@ A camera offline longer than `alerts.camera_offline_after_s` (default 300 s) giv
 Measured (phase 2 B, 2-core sandbox, YOLOX-Tiny, two real RTSP streams from MediaMTX): both
 cameras at 10 FPS; stream stopped → `offline` within 1 s; stream back → counting again after
 12–16 s; the other camera kept counting during the outage.
+
+## Cloud upload
+
+After `countvision-edge pair ...` the file `data/cloud.json` holds the cloud address and this
+device's token (keep it private). `countvision-edge run` then uploads every `cloud.upload_interval_s`
+(15 s): minute counts, zone numbers, coverage, events, the newest heartbeat and the camera states.
+**Only numbers** — never images or video.
+
+- No network? Counting goes on; rows stay in `data/countvision.db` (`sent = 0`) and are sent when
+  the cloud is reachable again (several uploads in a row, retry 2 s … 60 s). `health` shows
+  `cloud: offline, N rows waiting`.
+- Sending something twice is safe: the cloud overwrites minute rows and ignores known events.
+- Removed in the web app? The upload stops (`cloud: revoked`), counting continues locally.
+- `cloud.url` / `CV_CLOUD_URL` overrides the address, e.g. `http://host.docker.internal:3000`
+  when the agent runs in Docker and the cloud on the same PC.
+- The local data is still deleted after `storage.retention_days`, sent or not. A device that is
+  offline longer than that loses the oldest numbers.
+
+Tested (phase 3 B, sandbox): two cameras uploaded the demo video, the cloud showed exactly
+IN 4 / OUT 2 per camera; cloud stopped, counted again (13 rows waiting), cloud started,
+`upload`: cloud IN 8 / OUT 4 = edge report, nothing lost, nothing doubled.
 
 ## Privacy
 

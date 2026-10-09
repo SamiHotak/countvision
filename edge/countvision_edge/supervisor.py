@@ -235,6 +235,8 @@ class Supervisor:
             for cam in (cameras if cameras is not None else cfg.cameras)
         ]
         self.started_at: float | None = None
+        self.uploader = None  # cloud.CloudUploader when paired (see start_uploader)
+        self._last_status: dict | None = None
 
     # -- lifecycle ----------------------------------------------------------------------
 
@@ -259,9 +261,37 @@ class Supervisor:
     def alive(self) -> bool:
         return any(w.is_alive() for w in self.workers)
 
-    def run_forever(self, stop: threading.Event | None = None) -> None:
+    def start_uploader(self, uploader=None) -> None:
+        """Start uploading to the cloud (when this device is paired). ``uploader`` for tests."""
+        from .cloud import make_uploader
+
+        self.uploader = uploader or make_uploader(self.cfg, self.buffer, self.cloud_status)
+        if self.uploader is not None:
+            self.uploader.start()
+
+    def cloud_status(self) -> dict:
+        """Status for the cloud: like status.json, cameras with the names of their lines/zones."""
+        status = dict(self._last_status or self.status())
+        by_id = {w.cam.id: w.cam for w in self.workers}
+        cameras = []
+        for cam in status.pop("cameras", []):
+            conf = by_id.get(cam["camera_id"])
+            cameras.append({
+                "id": cam["camera_id"], "name": cam.get("name") or cam["camera_id"], "state": cam["state"],
+                "connected": cam.get("connected"), "fps": cam.get("fps"), "reconnects": cam.get("reconnects"),
+                "alert": cam.get("alert"),
+                "lines": [line.name for line in conf.lines] if conf else [],
+                "zones": [zone.name for zone in conf.zones] if conf else [],
+            })
+        status.pop("pid", None)
+        status["cameras"] = cameras
+        return status
+
+    def run_forever(self, stop: threading.Event | None = None, *, upload: bool = True) -> None:
         """Start, then check every second until everything ended or ``stop`` is set."""
         self.start()
+        if upload:
+            self.start_uploader()
         next_status = 0.0
         try:
             while self.alive:
@@ -277,6 +307,12 @@ class Supervisor:
             self.join(timeout=15)
             self.check_alerts()
             self.write_status()
+            if self.uploader is not None:
+                self.uploader.stop()
+                self.uploader.join(timeout=5)
+                if self.uploader.state.state == "ok":
+                    self.uploader.flush(timeout_s=10)  # send the last minutes before exiting
+                self.write_status()
 
     # -- alerts -------------------------------------------------------------------------
 
@@ -331,13 +367,16 @@ class Supervisor:
                          "license": info.license},
             "privacy": {"preview": self.cfg.privacy.preview, "stores_images": False},
             "cameras": [asdict(w.refresh()) for w in self.workers],
+            "upload": asdict(self.uploader.state) if self.uploader is not None else {"state": "disabled"},
         }
 
     def write_status(self) -> Path:
         """Write status.json atomically (a reader never sees half a file)."""
         self.status_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.status_path.with_name(f".{STATUS_FILE}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(self.status(), indent=2), encoding="utf-8")
+        status = self.status()
+        self._last_status = status
+        tmp.write_text(json.dumps(status, indent=2), encoding="utf-8")
         os.replace(tmp, self.status_path)
         return self.status_path
 
@@ -382,6 +421,12 @@ def check_health(status_path: str | Path, max_age_s: float = 60.0, now: float | 
     if age > max_age_s:
         lines.append(f"STALE: status not updated for {age:.0f} s (limit {max_age_s:.0f} s)")
         code = 1
+    upload = data.get("upload") or {}
+    if upload.get("state") and upload["state"] != "disabled":
+        line = f"  cloud: {upload['state']}, {upload.get('pending', 0)} rows waiting"
+        if upload.get("last_error") and upload["state"] != "ok":
+            line += f" ({upload['last_error']})"
+        lines.append(line)
     for cam in data.get("cameras", []):
         fps = "-" if cam.get("fps") is None else f"{cam['fps']:.1f}"
         line = (f"  {cam['camera_id']}: {cam['state']}, {fps} FPS, "

@@ -62,6 +62,21 @@ Stop everything: `docker compose --profile test down` (the numbers in `data\` st
    Open `http://<this PC's IP>:8000/?key=...` (the key is printed). People are pixelated.
    Draw, **Save and count**, then Ctrl+C and `docker compose start countvision`.
 
+## Connect to the CountVision cloud
+
+1. In the web app: **Devices → Add device**, choose the site, give the device a name. You get a code.
+2. In this `docker` folder (the cloud on the same PC: use `host.docker.internal` instead of `localhost`):
+
+   ```powershell
+   docker compose run --rm countvision pair --url http://host.docker.internal:3000 --code XXXX-XXXX
+   docker compose restart countvision
+   ```
+
+3. Within 15 s the device shows **Online** in the web app, its cameras appear after the first upload.
+   Check here: `docker compose exec countvision countvision-edge cloud-status`.
+
+Linux installer: `sudo countvision pair --url https://<cloud> --code XXXX-XXXX` (restarts by itself).
+
 ## Linux mini-PC
 
 Use the one-line installer (`install.sh` in the repo root): it installs Docker if needed, sets

@@ -35,6 +35,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
 
 from countvision_cloud.db import Base, get_engine, reset_engine  # noqa: E402
+from countvision_cloud.product import models as _product_models  # noqa: E402,F401  (register tables)
 from countvision_cloud.redis_client import get_redis  # noqa: E402
 from countvision_cloud.saas.services import email  # noqa: E402
 from countvision_cloud.settings import get_settings  # noqa: E402

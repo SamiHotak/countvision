@@ -24,6 +24,15 @@ function describe(e: AuditEntry): string {
     case "member.role_changed": return `changed the role of ${m.email} from ${m.old} to ${m.new}`;
     case "member.removed": return `removed ${m.email}`;
     case "member.left": return "left the organization";
+    case "site.created": return `added the site "${m.name}"`;
+    case "site.updated": return "changed a site";
+    case "site.deleted": return `deleted the site "${m.name}"`;
+    case "device.pairing_code_created": return `created a pairing code for "${m.device_name}"`;
+    case "device.paired": return `connected the device "${m.name}" at ${m.site}`;
+    case "device.updated": return "changed a device";
+    case "device.revoked": return `removed the device "${m.name}"`;
+    case "device.deleted": return `deleted the device "${m.name}" and its data`;
+    case "camera.renamed": return `renamed a camera from "${m.old}" to "${m.new}"`;
     default: return e.action;
   }
 }

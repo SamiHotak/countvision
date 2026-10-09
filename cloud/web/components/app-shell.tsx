@@ -88,6 +88,8 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
       {orgId ? (
         <>
           <NavLink href={`/app/orgs/${orgId}`} exact>Overview</NavLink>
+          <NavLink href={`/app/orgs/${orgId}/devices`}>Devices</NavLink>
+          <NavLink href={`/app/orgs/${orgId}/sites`}>Sites</NavLink>
           <NavLink href={`/app/orgs/${orgId}/members`}>Members</NavLink>
           <NavLink href={`/app/orgs/${orgId}/settings`}>Settings</NavLink>
         </>

@@ -283,7 +283,7 @@ class SqliteBuffer:
             )
             self._db.commit()
 
-    # -- upload support (used by the cloud sync in phase 3) ------------------------------
+    # -- upload support (cloud.py) -------------------------------------------------------
 
     def fetch_unsent(self, table: str, limit: int = 500) -> list[dict]:
         """Rows that have not been uploaded yet, oldest first."""
@@ -293,6 +293,46 @@ class SqliteBuffer:
                 f"SELECT * FROM {table} WHERE sent = 0 ORDER BY id LIMIT ?", (limit,)  # noqa: S608
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    # Columns that change when a minute row is updated (add_* merges new data into a row and
+    # sets sent=0). A row is only marked as sent if these still have the uploaded values, so an
+    # update that happens DURING an upload is sent again next time instead of being lost.
+    _CHANGING = {
+        "line_counts": ("in_count", "out_count"),
+        "zone_stats": ("sample_s", "visits", "occ_last"),
+        "coverage": ("frames", "seconds"),
+    }
+
+    def mark_sent_rows(self, table: str, rows: Sequence[dict]) -> int:
+        """Mark uploaded rows as sent, unless they changed meanwhile. Returns rows marked."""
+        self._check_table(table)
+        if not rows:
+            return 0
+        columns = self._CHANGING.get(table, ())
+        where = " AND ".join(["id = ?"] + [f"{c} = ?" for c in columns])
+        params = [(r["id"], *[r[c] for c in columns]) for r in rows]
+        with self._lock:
+            before = self._db.total_changes
+            self._db.executemany(f"UPDATE {table} SET sent = 1 WHERE {where}", params)  # noqa: S608
+            self._db.commit()
+            return self._db.total_changes - before
+
+    def mark_sent_upto(self, table: str, max_id: int) -> None:
+        """Mark every row up to an id as sent (heartbeats: only the newest one is uploaded)."""
+        self._check_table(table)
+        with self._lock:
+            self._db.execute(f"UPDATE {table} SET sent = 1 WHERE sent = 0 AND id <= ?", (max_id,))  # noqa: S608
+            self._db.commit()
+
+    def count_unsent(self, tables: Sequence[str] = ("events", "line_counts", "zone_stats", "coverage"),
+                     ) -> int:
+        """Rows waiting for upload (heartbeats are not counted: only the newest is sent)."""
+        total = 0
+        with self._lock:
+            for table in tables:
+                self._check_table(table)
+                total += self._db.execute(f"SELECT COUNT(*) FROM {table} WHERE sent = 0").fetchone()[0]  # noqa: S608
+        return total
 
     def mark_sent(self, table: str, ids: Sequence[int]) -> None:
         self._check_table(table)
