@@ -34,8 +34,10 @@ test("forgot password, reset, log in with the new one", async ({ page, request }
   await signUp(page, "Fritz", email);
   await createOrg(page, "Kiosk Nord");
   await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page.getByRole("heading", { name: "Log in" })).toBeVisible();
 
   await page.getByRole("link", { name: "Forgot your password?" }).click();
+  await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Send reset link" }).click();
   await expect(page.getByText(/If an account exists/)).toBeVisible();

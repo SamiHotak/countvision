@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Wordmark } from "@/components/brand";
-import { useMe } from "@/components/me";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/panel";
 import { api, errorText, type Me, type Ok } from "@/lib/api";
@@ -73,16 +72,15 @@ function VerifyBanner() {
 }
 
 export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null; children: React.ReactNode }) {
-  const router = useRouter();
-  const { setMe } = useMe();
   const [open, setOpen] = React.useState(false);
   const path = usePathname();
   React.useEffect(() => setOpen(false), [path]);
 
   async function logout() {
     await api.post("/api/auth/logout").catch(() => undefined);
-    setMe(null);
-    router.replace("/login");
+    // Full page load: clears all client state, and avoids a race with the "please log in"
+    // redirect of RequireLogin (two navigations to /login, the late one could undo the next click).
+    window.location.assign("/login");
   }
 
   const nav = (
