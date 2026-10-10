@@ -120,6 +120,7 @@ device's token (keep it private). `countvision-edge run` then uploads every `clo
   `cloud: offline, N rows waiting`.
 - Sending something twice is safe: the cloud overwrites minute rows and ignores known events.
 - Removed in the web app? The upload stops (`cloud: revoked`), counting continues locally.
+- New line crossings go up within about 1 s while the cloud is reachable (live counters).
 - `cloud.url` / `CV_CLOUD_URL` overrides the address, e.g. `http://host.docker.internal:3000`
   when the agent runs in Docker and the cloud on the same PC.
 - The local data is still deleted after `storage.retention_days`, sent or not. A device that is
@@ -128,6 +129,33 @@ device's token (keep it private). `countvision-edge run` then uploads every `clo
 Tested (phase 3 B, sandbox): two cameras uploaded the demo video, the cloud showed exactly
 IN 4 / OUT 2 per camera; cloud stopped, counted again (13 rows waiting), cloud started,
 `upload`: cloud IN 8 / OUT 4 = edge report, nothing lost, nothing doubled.
+
+## Lines, zones and counting hours from the cloud (phase 3 C)
+
+When the device is paired, `run` also keeps one open request to the cloud (a long-poll, 25 s).
+When somebody saves lines/zones/classes/counting hours in the cloud editor, the device gets them
+**within about a second**, applies them to the **running** camera (from the next frame; totals of
+lines with the same name are kept) and reports the version back with an immediate upload.
+
+- The cloud version is saved in `data/cloud_config.json` and used at every start, on top of the
+  YAML config (source, detector and tuning stay from the YAML). Delete that file to go back to the
+  YAML lines. `cloud.config_sync: false` ignores the cloud editor completely.
+- A config the model cannot use (e.g. a class it does not know) is refused; the old config keeps
+  counting and the web app shows the reason.
+- Counting hours (`schedule:` per camera: `days` 0 = Monday … 6 = Sunday, `start`, `end`,
+  `timezone`; end before start = over midnight): outside, frames are read but not analysed and the
+  camera shows `paused`. The cloud sends the site's time zone.
+- Snapshots: only when a user clicks **Take snapshot** in the web app. The device runs a fresh
+  detection on the newest frame (ALL classes, so people in a car park are hidden too), pixelates
+  every box, scales to max 960 px and sends ONE JPEG. Nothing is saved here; the cloud keeps it 10
+  minutes in memory. `privacy.snapshots: false` refuses all snapshot requests.
+- New line crossings are uploaded within ~1 s (not only every `upload_interval_s`), so the web
+  app's counters are live.
+
+Measured (sandbox, edge agent with an MJPEG test stream + real cloud through the web server):
+crossing → browser 0.6–0.95 s (median 0.77 s, 12 crossings); line saved in the browser →
+applied on the edge and reported back 0.48 s; snapshot 0.6 s; the new line counted at once;
+config saved while the agent was stopped → applied right after its next start.
 
 ## Privacy
 
@@ -147,6 +175,8 @@ seen sending telemetry to Microsoft before this.)
 - The web app shows one camera at a time (`--camera <id>`). Do not run the web app and
   `run` on the same cameras at the same time: everything would be counted twice.
 - The web app has no login. Keep it on 127.0.0.1, or use the key link with `--host 0.0.0.0`.
+- After lines were saved in the cloud editor, `run` uses the cloud version (`data/cloud_config.json`).
+  The local web app (`app`) still shows and edits the YAML lines. Use one place to draw lines.
 - RTSP was tested with MediaMTX test streams (phase 2 B), not yet with a real IP camera.
 - The RF-DETR wrapper is untested without weights (measured on Colab with `eval/colab/`).
 - COCO models do not recognise cars filmed from straight above (they see "cell phone"). Mount

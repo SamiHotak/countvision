@@ -79,3 +79,28 @@
 @media (prefers-reduced-motion: reduce) {
   .walker { animation: none; opacity: 1; transform: translateX(80px); }
 }
+
+/* Camera editor: empty stage grid (no snapshot) and the flash on a line when someone crosses. */
+.cv-grid {
+  background-color: #0a1218;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--color-rule) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-rule) 70%, transparent) 1px, transparent 1px);
+  background-size: 10% 10%;
+}
+@keyframes cv-pulse {
+  from { stroke-opacity: 0.9; stroke-width: 16px; }
+  to { stroke-opacity: 0; stroke-width: 3px; }
+}
+.cv-pulse {
+  animation: cv-pulse 0.9s ease-out forwards;
+  stroke-opacity: 0;
+}
+@keyframes cv-tick {
+  from { color: var(--color-accent); }
+  to { color: inherit; }
+}
+.cv-tick { animation: cv-tick 1.2s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .cv-pulse, .cv-tick { animation: none; }
+}

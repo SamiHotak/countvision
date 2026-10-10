@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Notice, Panel, PanelHead } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-dot";
 import { deviceHealth } from "@/lib/device";
+import { useLiveReload } from "@/lib/live";
 import { api, errorText, roleRank, timeAgo, type Device, type Org, type Site } from "@/lib/api";
 
 function DevicesView({ org }: { org: Org }) {
@@ -38,12 +39,11 @@ function DevicesView({ org }: { org: Org }) {
 
   React.useEffect(() => {
     void load();
-    const timer = setInterval(() => {
-      void load();
-      setNow(Date.now());
-    }, 10_000);
+    const timer = setInterval(() => setNow(Date.now()), 10_000); // "last contact 20 s ago"
     return () => clearInterval(timer);
   }, [load]);
+  const reload = React.useCallback(() => void load(), [load]);
+  useLiveReload(org.id, reload, 3000, 10_000);
 
   return (
     <>

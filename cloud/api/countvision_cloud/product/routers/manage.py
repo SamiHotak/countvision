@@ -9,15 +9,18 @@ from __future__ import annotations
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from ...db import get_db, utcnow
 from ...saas.deps import OrgContext, org_access
+from ...saas.errors import NotFound
 from ...saas.models import Role
 from ...saas.schemas import OkOut
 from ..models import Device, Site
 from ..schemas import (
+    CameraConfigDoc,
+    CameraDetailOut,
     CameraOut,
     CameraPatch,
     DeviceDetailOut,
@@ -28,8 +31,9 @@ from ..schemas import (
     SiteIn,
     SiteOut,
     SitePatch,
+    SnapshotOut,
 )
-from ..services import devices, sites, stats
+from ..services import camera_config, devices, sites, stats
 
 router = APIRouter(prefix="/api/orgs/{org_id}", tags=["sites and devices"])
 
@@ -107,7 +111,7 @@ def _device_out(d: Device) -> dict:
         last_data_at=d.last_data_at, paired_at=d.paired_at, revoked=d.revoked_at is not None,
         camera_count=len(d.cameras),
         cameras_online=sum(1 for c in d.cameras
-                           if online and c.state == "running" and c.connected is not False),
+                           if online and c.state in ("running", "paused") and c.connected is not False),
         detector=(d.status or {}).get("detector"), upload=(d.status or {}).get("upload"),
     )
 
@@ -122,14 +126,16 @@ def get_device(device_id: uuid.UUID, ctx: OrgContext = Depends(org_access()),
                db: Session = Depends(get_db)) -> DeviceDetailOut:
     d = devices.get_device(db, ctx.org, device_id)
     online = devices.is_online(d)
-    today = stats.line_totals(db, [c.id for c in d.cameras], stats.local_midnight(d.site.timezone))
+    today = stats.event_totals(db, [c.id for c in d.cameras], stats.local_midnight(d.site.timezone))
     batches, rows = devices.batch_stats(db, d, utcnow() - timedelta(hours=24))
     cams = [
         CameraOut(id=c.id, edge_camera_id=c.edge_camera_id, name=c.name,
                   state=c.state if online else "offline" if c.state else None,
                   connected=c.connected if online else None, fps=c.fps if online else None,
                   reconnects=c.reconnects, alert=c.alert, lines=c.lines or [], zones=c.zones or [],
-                  last_seen_at=c.last_seen_at, today=today.get(c.id, {}))
+                  last_seen_at=c.last_seen_at, today=today.get(c.id, {}),
+                  desired_version=c.desired_version, applied_version=c.applied_version,
+                  config_error=c.config_error)
         for c in d.cameras
     ]
     return DeviceDetailOut(**_device_out(d), cameras=cams, site_timezone=d.site.timezone,
@@ -168,3 +174,50 @@ def rename_camera(camera_id: uuid.UUID, body: CameraPatch, ctx: OrgContext = Dep
     devices.rename_camera(db, ctx.org, camera_id, ctx.user, body.name)
     db.commit()
     return OkOut(message="Camera renamed.")
+
+
+# --- camera config and snapshots (Phase 3 C) ------------------------------------------------------
+
+@router.get("/cameras/{camera_id}", response_model=CameraDetailOut)
+def get_camera(camera_id: uuid.UUID, ctx: OrgContext = Depends(org_access()),
+               db: Session = Depends(get_db)) -> CameraDetailOut:
+    return camera_config.camera_detail(db, camera_config.get_camera(db, ctx.org, camera_id))
+
+
+@router.put("/cameras/{camera_id}/config", response_model=CameraDetailOut)
+def save_camera_config(camera_id: uuid.UUID, body: CameraConfigDoc,
+                       ctx: OrgContext = Depends(org_access(Role.MEMBER)),
+                       db: Session = Depends(get_db)) -> CameraDetailOut:
+    """Save lines, zones, classes, anchor and schedule; the device applies them within seconds."""
+    cam = camera_config.get_camera(db, ctx.org, camera_id)
+    camera_config.save_config(db, cam, ctx.user, body)
+    db.commit()
+    camera_config.notify_device(cam.device_id)
+    return camera_config.camera_detail(db, camera_config.get_camera(db, ctx.org, camera_id))
+
+
+@router.post("/cameras/{camera_id}/snapshot", response_model=SnapshotOut, status_code=202)
+def take_snapshot(camera_id: uuid.UUID, ctx: OrgContext = Depends(org_access(Role.MEMBER)),
+                  db: Session = Depends(get_db)) -> SnapshotOut:
+    """Ask the device for ONE pixelated picture (kept 10 minutes in memory, for drawing lines)."""
+    cam = camera_config.get_camera(db, ctx.org, camera_id)
+    req = camera_config.request_snapshot(db, cam, ctx.user)
+    db.commit()
+    camera_config.notify_device(cam.device_id)
+    return SnapshotOut(request_id=req, status="pending")
+
+
+@router.get("/cameras/{camera_id}/snapshot/{request_id}", response_model=SnapshotOut)
+def snapshot_status(camera_id: uuid.UUID, request_id: str, ctx: OrgContext = Depends(org_access(Role.MEMBER)),
+                    db: Session = Depends(get_db)) -> SnapshotOut:
+    out, _ = camera_config.snapshot_status(camera_config.get_camera(db, ctx.org, camera_id), request_id)
+    return out
+
+
+@router.get("/cameras/{camera_id}/snapshot/{request_id}/image")
+def snapshot_image(camera_id: uuid.UUID, request_id: str, ctx: OrgContext = Depends(org_access(Role.MEMBER)),
+                   db: Session = Depends(get_db)) -> Response:
+    out, image = camera_config.snapshot_status(camera_config.get_camera(db, ctx.org, camera_id), request_id)
+    if image is None:
+        raise NotFound("The snapshot is not ready.", code="snapshot_not_ready")
+    return Response(image, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})

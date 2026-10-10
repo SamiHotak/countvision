@@ -221,8 +221,23 @@ jobs:
           print(call("POST", "/api/device/ingest", batch, headers=auth)[0])
           print(call("POST", "/api/device/ingest", batch, headers=auth)[0])  # repeat: no doubles
           detail = call("GET", f"/api/orgs/{org['id']}/devices/{dev['device_id']}", cookie=cookie)[0]
-          assert detail["online"] and detail["cameras"][0]["today"]["entrance"] == {"in": 5, "out": 2}, detail
-          print("device online, today IN 5 / OUT 2")
+          # "today" counts line crossings (events), so the repeated batch still gives IN 1
+          assert detail["online"] and detail["cameras"][0]["today"]["entrance"] == {"in": 1, "out": 0}, detail
+          print("device online, today IN 1 / OUT 0")
+          # Phase 3 C: a line saved in the cloud reaches the device's long-poll
+          cam = detail["cameras"][0]["id"]
+          doc = {"lines": [{"name": "door", "p1": [0.1, 0.5], "p2": [0.9, 0.5]}], "zones": [], "classes": ["person"]}
+          saved = call("PUT", f"/api/orgs/{org['id']}/cameras/{cam}/config", doc, cookie=cookie)[0]
+          assert saved["desired_version"] == 1, saved
+          poll = call("GET", "/api/device/poll?rev=-1&wait=0", headers=auth)[0]
+          assert poll["changed"] and poll["cameras"][0]["version"] == 1, poll
+          print("config v1 delivered to the device")
+          # live stream through the web container (SSE): the first message is "hello"
+          req = urllib.request.Request(f"{base}/api/orgs/{org['id']}/live?max_s=2", headers={"Cookie": cookie})
+          with urllib.request.urlopen(req, timeout=10) as r:
+              assert r.headers["Content-Type"].startswith("text/event-stream")
+              assert b'"hello"' in r.read(), "no hello on the live stream"
+          print("live stream ok")
           PY
           docker compose -f cloud/compose.yaml exec -T db psql -U countvision -tAc \
             "SELECT hypertable_name FROM timescaledb_information.hypertables ORDER BY 1" | tee /tmp/ht.txt

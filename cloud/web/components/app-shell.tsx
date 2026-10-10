@@ -138,7 +138,9 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
         </div>
       ) : null}
 
-      <main className="mx-auto w-full max-w-[1040px] px-4 py-6 sm:px-8 sm:py-9">
+      {/* The camera editor is a drawing tool: it gets more width than the other pages. */}
+      <main className={cn("mx-auto w-full px-4 py-6 sm:px-8 sm:py-9",
+        path.includes("/cameras/") ? "max-w-[1440px]" : "max-w-[1040px]")}>
         {!me.email_verified ? <VerifyBanner /> : null}
         {children}
       </main>

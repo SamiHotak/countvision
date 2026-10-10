@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, Response
 
 from . import __version__
 from .logging_setup import setup_logging
-from .product.routers import device_api, manage
+from .product.routers import device_api, live_api, manage
 from .saas.errors import install_error_handlers
 from .saas.routers import auth, dev, health, me, orgs
 from .settings import get_settings
@@ -52,12 +52,12 @@ def create_app() -> FastAPI:
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("Cache-Control", "no-store")
         ms = (time.perf_counter() - started) * 1000
-        if request.url.path != "/api/health":
+        if path != "/api/health" and not path.endswith("/live") and path != "/api/device/poll":
             log.info("%s %s -> %s (%.0f ms)", request.method, request.url.path, response.status_code, ms)
         return response
 
     for router in (health.router, auth.router, me.router, orgs.router, orgs.invite_router, manage.router,
-                   device_api.router):
+                   device_api.router, live_api.router):
         app.include_router(router)
     if settings.environment != "production" and settings.email_backend == "memory":
         app.include_router(dev.router)

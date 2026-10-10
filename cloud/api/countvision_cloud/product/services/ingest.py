@@ -23,8 +23,10 @@ from sqlalchemy.orm import Session
 
 from ...db import utcnow
 from ...saas.errors import AppError
+from .. import live
 from ..models import Camera, CountEvent, Coverage, Device, IngestBatch, LineCount, ZoneStat
 from ..schemas import IngestIn, IngestOut
+from . import camera_config
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +88,40 @@ def _upsert(db: Session, model, rows: list[dict], keys: tuple[str, ...], update:
     return len(rows)
 
 
+def _insert_events(db: Session, rows: list[dict]) -> list[Any]:
+    """Insert events once; returns only the rows that were NEW (for the live counters)."""
+    rows = _dedupe(rows, ("camera_id", "event_id", "ts"))
+    new: list[Any] = []
+    for i in range(0, len(rows), CHUNK):
+        stmt = (insert(CountEvent).values(rows[i:i + CHUNK])
+                .on_conflict_do_nothing(index_elements=["camera_id", "event_id", "ts"])
+                .returning(CountEvent.camera_id, CountEvent.kind, CountEvent.name, CountEvent.direction,
+                           CountEvent.class_name, CountEvent.ts))
+        new.extend(db.execute(stmt).all())
+    return new
+
+
+LIVE_EVENT_LIMIT = 200  # more new crossings in one batch (a backlog after an outage): "refresh"
+
+
+def _live_messages(db: Session, device: Device, cams: dict[str, Camera], new_events: list[Any]) -> None:
+    by_id = {c.id: c for c in cams.values()}
+    crossings = [e for e in new_events if e.kind == "line_cross" and e.direction in ("in", "out")]
+    if len(crossings) > LIVE_EVENT_LIMIT:
+        live.queue(db, device.org_id, {"type": "refresh", "device_id": str(device.id)})
+    else:
+        for e in crossings:
+            live.queue(db, device.org_id, {
+                "type": "count", "camera_id": str(e.camera_id), "device_id": str(device.id), "line": e.name,
+                "direction": e.direction, "class_name": e.class_name, "ts": e.ts.timestamp()})
+    live.queue(db, device.org_id, {
+        "type": "device", "device_id": str(device.id), "last_seen_at": device.last_seen_at.isoformat(),
+        "cameras": [{"camera_id": str(c.id), "state": c.state, "connected": c.connected, "fps": c.fps,
+                     "applied_version": c.applied_version, "desired_version": c.desired_version,
+                     "config_error": c.config_error} for c in by_id.values()],
+    })
+
+
 def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
     now_dt = utcnow()
     now = now_dt.timestamp()
@@ -136,7 +172,8 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
          "dwell_s": r.dwell_s, "speed_kmh": r.speed_kmh}
         for r in payload.events if keep(r.ts)
     ]
-    accepted["events"] = _upsert(db, CountEvent, rows, ("camera_id", "event_id", "ts"), ())
+    new_events = _insert_events(db, rows)
+    accepted["events"] = len(rows)
 
     # -- live state: status list + newest heartbeat per camera -----------------------------------
     for status in payload.cameras:
@@ -151,6 +188,16 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
         cam.lines = list(status.lines)
         cam.zones = list(status.zones)
         cam.last_seen_at = now_dt
+        doc = camera_config.check_doc(status.config)
+        if doc is not None:
+            cam.reported_config = doc.model_dump()
+        if status.config_version is not None:
+            cam.applied_version = status.config_version
+        cam.config_error = status.config_error
+        if status.snapshots_allowed is not None:
+            cam.snapshots_allowed = status.snapshots_allowed
+        if status.frame:
+            cam.frame_width, cam.frame_height = status.frame
     newest_beat: dict[str, Any] = {}
     for beat in payload.heartbeats:
         if beat.camera_id not in newest_beat or beat.ts > newest_beat[beat.camera_id].ts:
@@ -175,6 +222,7 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
         if device.last_data_at is None or newest_dt > device.last_data_at:
             device.last_data_at = newest_dt
 
+    _live_messages(db, device, cams, new_events)
     total = sum(accepted.values())
     result = db.execute(
         insert(IngestBatch).values(device_id=device.id, batch_id=payload.batch_id, rows=total,

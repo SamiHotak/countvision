@@ -193,6 +193,8 @@ class CloudUploader(threading.Thread):
         self.stop_event = threading.Event()
         self.state = UploadState(url=self.url)
         self._backoff = Backoff(2.0, 2.0, 60.0, jitter=0.2)
+        self._wake = threading.Event()
+        self.fast_events = True  # new count events go up within ~1 s (live counters in the cloud)
 
     # -- one upload -----------------------------------------------------------------------
 
@@ -282,7 +284,31 @@ class CloudUploader(threading.Thread):
                 log.exception("Cloud upload failed")
                 self.state.state, self.state.last_error = "error", f"{type(exc).__name__}: {exc}"
                 delay = self._backoff.next_delay()
-            self.stop_event.wait(delay)
+            self._sleep(delay)
+
+    def _sleep(self, delay: float) -> None:
+        """Wait until the next upload. Wakes up early (checked every second) when the cloud is
+        reachable and new events (line crossings) are waiting, or when ``wake()`` was called."""
+        deadline = time.monotonic() + delay
+        while not self.stop_event.is_set():
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            if self._wake.wait(min(1.0, left)):
+                self._wake.clear()
+                return
+            if self.fast_events and self.state.state == "ok" and self._events_waiting():
+                return
+
+    def _events_waiting(self) -> bool:
+        try:
+            return self.buffer.count_unsent(("events",)) > 0
+        except Exception:  # noqa: BLE001 - a busy database just means "check again later"
+            return False
+
+    def wake(self) -> None:
+        """Upload now (e.g. right after a new config was applied, to report its version)."""
+        self._wake.set()
 
     def _on_error(self, exc: CloudError) -> float | None:
         """Decide what to do after an error. None = stop uploading."""

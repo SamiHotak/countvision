@@ -22,6 +22,8 @@ export function cameraHealth(c: Camera, deviceOnline: boolean): { health: Health
       return { health: "warn", label: "Reconnecting" };
     case "failed":
       return { health: "down", label: "Failed" };
+    case "paused":
+      return { health: "idle", label: "Paused outside counting hours" };
     case "finished":
       return { health: "idle", label: "Video finished" };
     default:

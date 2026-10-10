@@ -195,6 +195,48 @@ class SpeedConfig(_Model):
     distance_m: float = Field(gt=0)
 
 
+class ScheduleConfig(_Model):
+    """Count only at these times (e.g. opening hours). Outside, frames are read but not analysed.
+
+    days: 0 = Monday ... 6 = Sunday. ``end`` before ``start`` means over midnight (22:00-06:00).
+    timezone: IANA name (the site's time zone from the cloud); empty = this computer's time.
+    """
+
+    days: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6], min_length=1)
+    start: str = Field("00:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    end: str = Field("23:59", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    timezone: str | None = None
+
+    @field_validator("days")
+    @classmethod
+    def _days(cls, value: list[int]) -> list[int]:
+        if any(d < 0 or d > 6 for d in value):
+            raise ValueError("schedule days are 0 (Monday) to 6 (Sunday)")
+        return sorted(set(value))
+
+    def is_active(self, ts: float) -> bool:
+        """Is the time ``ts`` (UTC epoch seconds) inside the schedule?"""
+        tz = None
+        if self.timezone:
+            try:
+                from zoneinfo import ZoneInfo
+
+                tz = ZoneInfo(self.timezone)
+            except Exception:  # noqa: BLE001 - unknown zone / no tz database: use local time
+                tz = None
+        local = datetime.fromtimestamp(ts, tz) if tz else datetime.fromtimestamp(ts)
+        minute = local.hour * 60 + local.minute
+        start = int(self.start[:2]) * 60 + int(self.start[3:])
+        end = int(self.end[:2]) * 60 + int(self.end[3:])
+        weekday = local.weekday()
+        if start <= end:
+            return weekday in self.days and start <= minute <= end
+        # over midnight: the part after midnight belongs to the day before
+        if minute >= start:
+            return weekday in self.days
+        return minute <= end and (weekday - 1) % 7 in self.days
+
+
 class SchedulerConfig(_Model):
     """Frame scheduling. ``target_fps`` None means: every frame for files, 10 FPS for live."""
 
@@ -216,6 +258,7 @@ class CameraConfig(_Model):
     heatmap: HeatmapConfig = Field(default_factory=HeatmapConfig)
     speed: SpeedConfig | None = None
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    schedule: ScheduleConfig | None = None  # None = count all the time
 
     @model_validator(mode="after")
     def _check(self) -> CameraConfig:
@@ -256,8 +299,10 @@ class PrivacyConfig(_Model):
                   person/vehicle and lowers the resolution to 640 px, "off" shows no picture
                   at all, "full" shows the camera as it is (only for setup, with permission).
     preview_max_width: the preview is never wider than this.
-    snapshots:    allow "countvision-edge snapshot" (one frame saved locally, for drawing
-                  lines). Set false on a site where nobody may store any picture.
+    snapshots:    allow "countvision-edge snapshot" (one frame saved locally) and snapshot
+                  requests from the cloud editor (one pixelated JPEG, max 960 px, sent only
+                  when a user clicks "Take snapshot"). Set false on a site where no picture
+                  may leave the camera at all; lines are then drawn on an empty grid.
     """
 
     preview: Literal["blur", "off", "full"] = "blur"
@@ -282,6 +327,9 @@ class CloudConfig(_Model):
                         device offline after 90 s without contact).
     batch_rows:         max rows per table and upload. A backlog after an outage is sent in
                         several uploads one after the other.
+    config_sync:        accept lines/zones/classes/schedules drawn in the cloud web app (applied
+                        within seconds, saved in <data_dir>/cloud_config.json). Set false to
+                        keep the YAML config in charge.
     """
 
     enabled: bool = True
@@ -289,6 +337,7 @@ class CloudConfig(_Model):
     upload_interval_s: float = Field(15.0, ge=2, le=60)
     batch_rows: int = Field(1000, ge=10, le=5000)
     timeout_s: float = Field(20.0, gt=0)
+    config_sync: bool = True
 
 
 class StorageConfig(_Model):

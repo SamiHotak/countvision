@@ -108,6 +108,16 @@ class Camera(Base):
     zones: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     last_seen_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    # Config (Phase 3 C). "reported" = what the edge runs now; "desired" = edited in the cloud.
+    # The edge applies desired_version and reports applied_version back.
+    reported_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    desired_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    desired_version: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    applied_version: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    config_error: Mapped[str | None] = mapped_column(String(300))
+    snapshots_allowed: Mapped[bool | None]
+    frame_width: Mapped[int | None] = mapped_column(Integer)
+    frame_height: Mapped[int | None] = mapped_column(Integer)
 
     device: Mapped[Device] = relationship(back_populates="cameras")
 

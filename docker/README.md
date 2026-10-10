@@ -77,6 +77,9 @@ Stop everything: `docker compose --profile test down` (the numbers in `data\` st
 
 Linux installer: `sudo countvision pair --url https://<cloud> --code XXXX-XXXX` (restarts by itself).
 
+Lines, zones and counting hours drawn in the web app (camera → **Edit lines and zones**) reach the
+container within seconds and are kept in the data volume (`/data/cloud_config.json`).
+
 ## Linux mini-PC
 
 Use the one-line installer (`install.sh` in the repo root): it installs Docker if needed, sets

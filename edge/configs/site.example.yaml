@@ -30,6 +30,7 @@ alerts:
 cloud:                   # only used after: countvision-edge pair --url ... --code ...
   enabled: true
   upload_interval_s: 15  # numbers go up every 15 s; offline = kept here and sent later
+  config_sync: true      # lines/zones/hours drawn in the cloud web app are used within seconds
 
 storage:
   retention_days: 45     # numbers older than this are deleted on the device (covers a 1-month pilot)
@@ -42,11 +43,16 @@ cameras:
       rtsp_transport: tcp
     classes: [person]
     anchor: bottom_center
-    lines:   # draw these with the web app (countvision-edge app --config site.yaml --camera entrance)
+    lines:   # draw these in the cloud web app (or locally: countvision-edge app --config site.yaml --camera entrance)
       - name: door
         p1: [0.20, 0.60]
         p2: [0.80, 0.60]
         in_direction: to_right
+    schedule:              # optional: count only in opening hours (0 = Monday ... 6 = Sunday)
+      days: [0, 1, 2, 3, 4, 5]
+      start: "07:00"
+      end: "20:00"
+      timezone: Europe/Berlin
     scheduler:
       target_fps: 10
 

@@ -64,7 +64,7 @@ browser ──> web (Next.js, :3000) ──/api/*──> api (FastAPI) ──> P
    .\start.bat --count
    ```
    Edge in Docker on the same PC: see `docker/README.md` (use `http://host.docker.internal:3000`).
-3. The device page shows Online, the cameras, FPS and today's IN/OUT per line. It refreshes every 10 s.
+3. The device page shows Online, the cameras, FPS and today's IN/OUT per line (live, see below).
    Pull the network cable: the device keeps counting; after reconnecting it sends everything it missed.
 
 Upload API (`POST /api/device/ingest`): batches of minute rows (line counts, zone stats, coverage),
@@ -72,6 +72,35 @@ events, heartbeats and camera states; up to 5000 rows per list. Minute rows are 
 "insert or overwrite" and events once, so a repeated batch changes nothing. Rows more than 1 day in
 the future or older than 400 days are rejected and counted. A device counts as offline after 90 s
 without contact. Removing a device makes its token useless at once; its numbers stay.
+
+## Camera editor and live counters (Phase 3 Session C)
+
+Device page → camera → **Edit lines and zones** (`/app/orgs/<org>/cameras/<camera>`):
+
+- **Take snapshot**: asks the device for ONE picture. The device pixelates every detected person and
+  vehicle and scales it to max 960 px. The cloud keeps it **10 minutes in Redis memory only** (never in
+  the database or on disk) and logs who asked (`camera.snapshot_requested`). Devices with
+  `privacy.snapshots: false` refuse; you draw on a grid instead.
+- Tools: **Select (V)**, **Line (L)** (drag), **Zone (Z)** (click corners, click the first one again /
+  double-click / Enter to finish), Undo/Redo (Ctrl+Z, Ctrl+Shift+Z), Snap (S: corners and 0/45/90°),
+  Flip IN direction (F), Delete. Rename in the side panel (a new name starts a new count).
+- What to count (people, bicycles, cars, motorcycles, buses, trucks), count point (feet / middle),
+  counting hours (days + from/to in the site's time zone; outside them the camera is "paused").
+- **Save and send to device** → new version → the device, waiting in `GET /api/device/poll`, gets it
+  within about a second, applies it to the running camera and reports the version. The panel shows
+  "Sending…", "Version N is running on the device", or the device's error. Members and above edit,
+  viewers see the lines and live counts.
+
+Live (`GET /api/orgs/<org>/live`, Server-Sent Events): line crossings, device status, config versions
+and snapshot results are pushed to open pages (only numbers and names). Devices send new crossings
+within ~1 s; "today" = line-crossing events since local midnight. Measured in the sandbox: crossing on
+the device → browser 0.6–0.95 s. Pages still refresh slowly as a fallback. A reverse proxy in front
+(Phase 5, Caddy) must not buffer `text/event-stream`.
+
+Device API added: `GET /api/device/poll?rev=&wait=` (long-poll, max 55 s, holds no database
+connection while waiting), `POST /api/device/snapshots/<request>` (JPEG body or `{"error": ...}`).
+Org API added: `GET /cameras/<id>`, `PUT /cameras/<id>/config`, `POST /cameras/<id>/snapshot`,
+`GET /cameras/<id>/snapshot/<request>` (+ `/image`).
 
 ## What works (Phase 3 Sessions A and B)
 

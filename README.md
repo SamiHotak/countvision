@@ -32,6 +32,8 @@ today's chart and CSV download.
   `cd cloud`, `copy .env.example .env`, `docker compose up -d --build`, open http://localhost:3000.
 - Phase 3, Session B: sites, devices with one-time pairing codes, the edge agent uploads its numbers
   (and replays them after a network outage), device status page with today's counts.
+- Phase 3, Session C: draw lines and zones in the browser on a pixelated snapshot, choose what to
+  count and the counting hours; the device uses them within about a second. Live counters (SSE).
 
 ## Install on a pilot device (one line)
 

@@ -167,7 +167,7 @@ def test_ingest_is_idempotent_and_keeps_newest_minute_value(app, client):
     assert detail["detector"]["name"] == "yolox_tiny"
     cam = detail["cameras"][0]
     assert cam["name"] == "Entrance" and cam["state"] == "running" and cam["fps"] == 9.8
-    assert cam["lines"] == ["entrance"] and cam["today"]["entrance"] == {"in": 5, "out": 1}
+    assert cam["lines"] == ["entrance"] and cam["today"]["entrance"] == {"in": 1, "out": 0}  # from the crossing events
     assert detail["batches_24h"] == 2 and detail["camera_count"] == 1 and detail["cameras_online"] == 1
 
 

@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...db import utcnow
-from ..models import LineCount
+from ..models import CountEvent, LineCount
 
 
 def local_midnight(tz: str, now: datetime | None = None) -> datetime:
@@ -43,3 +43,26 @@ def line_totals(db: Session, camera_ids: list[uuid.UUID], since: datetime,
 def day_window(tz: str, now: datetime | None = None) -> tuple[datetime, datetime]:
     start = local_midnight(tz, now)
     return start, start + timedelta(days=1)
+
+
+def event_totals(db: Session, camera_ids: list[uuid.UUID], since: datetime
+                 ) -> dict[uuid.UUID, dict[str, dict[str, int]]]:
+    """IN/OUT per camera and line since a time, from the single crossing events.
+
+    Events arrive within seconds (minute rows only after the minute is over), so this is the
+    source for "today" and the live counters. Line names come from the events themselves.
+    """
+    if not camera_ids:
+        return {}
+    stmt = (
+        select(CountEvent.camera_id, CountEvent.name, CountEvent.direction, func.count())
+        .where(CountEvent.camera_id.in_(camera_ids), CountEvent.kind == "line_cross",
+               CountEvent.ts >= since)
+        .group_by(CountEvent.camera_id, CountEvent.name, CountEvent.direction)
+    )
+    out: dict[uuid.UUID, dict[str, dict[str, int]]] = {}
+    for cam, line, direction, n in db.execute(stmt):
+        if direction not in ("in", "out"):
+            continue
+        out.setdefault(cam, {}).setdefault(line, {"in": 0, "out": 0})[direction] = int(n)
+    return out

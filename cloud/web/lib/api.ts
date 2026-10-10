@@ -125,6 +125,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body: unknown = {}) => request<T>("POST", path, body),
+  put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
 };
@@ -198,6 +199,9 @@ export interface Camera {
   zones: string[];
   last_seen_at: string | null;
   today: Record<string, { in: number; out: number }>;
+  desired_version: number;
+  applied_version: number;
+  config_error: string | null;
 }
 
 export interface DeviceDetail extends Device {
@@ -226,3 +230,66 @@ export const COMMON_TIMEZONES = [
   "Europe/London", "Europe/Madrid", "Europe/Rome", "Europe/Warsaw", "Europe/Istanbul", "Asia/Kabul",
   "Asia/Dubai", "America/New_York", "America/Los_Angeles", "UTC",
 ];
+
+// --- camera config editor and live counters (Phase 3 C) --------------------------------------
+
+/** A point in the picture, 0..1 from the left / top edge (independent of the resolution). */
+export type Pt = [number, number];
+
+export interface LineCfg { name: string; p1: Pt; p2: Pt; in_direction: "to_right" | "to_left" }
+export interface ZoneCfg { name: string; polygon: Pt[]; kind: "area" | "queue" }
+export interface ScheduleCfg { days: number[]; start: string; end: string }
+
+export interface CameraConfig {
+  lines: LineCfg[];
+  zones: ZoneCfg[];
+  classes: string[];
+  anchor: "bottom_center" | "center";
+  schedule: ScheduleCfg | null;
+}
+
+export interface CameraDetail {
+  id: string;
+  edge_camera_id: string;
+  name: string;
+  device_id: string;
+  device_name: string;
+  device_online: boolean;
+  site_name: string;
+  site_timezone: string;
+  state: string | null;
+  fps: number | null;
+  config: CameraConfig | null;
+  config_source: "cloud" | "device" | "none";
+  desired_version: number;
+  applied_version: number;
+  config_error: string | null;
+  snapshots_allowed: boolean | null;
+  frame_width: number | null;
+  frame_height: number | null;
+  today: Record<string, { in: number; out: number }>;
+}
+
+export interface SnapshotStatus { request_id: string; status: "pending" | "ready" | "error"; message: string | null }
+
+/** Classes the cloud editor offers, with the same colours as the boxes on the edge (viz.py). */
+export const CLASSES: { id: string; label: string; color: string }[] = [
+  { id: "person", label: "People", color: "#46beff" },
+  { id: "bicycle", label: "Bicycles", color: "#8ce178" },
+  { id: "car", label: "Cars", color: "#ffa046" },
+  { id: "motorcycle", label: "Motorcycles", color: "#ff82c8" },
+  { id: "bus", label: "Buses", color: "#ff6e6e" },
+  { id: "truck", label: "Trucks", color: "#e65a82" },
+];
+
+export type LiveMessage =
+  | { type: "hello" }
+  | { type: "count"; camera_id: string; device_id: string; line: string; direction: "in" | "out"; class_name: string; ts: number }
+  | {
+      type: "device"; device_id: string; last_seen_at: string;
+      cameras: { camera_id: string; state: string | null; connected: boolean | null; fps: number | null;
+        applied_version: number; desired_version: number; config_error: string | null }[];
+    }
+  | { type: "config"; camera_id: string; desired_version: number; applied_version: number }
+  | { type: "snapshot"; camera_id: string; request_id: string; status: "ready" | "error" }
+  | { type: "refresh"; device_id: string };

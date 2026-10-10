@@ -1,28 +1,6 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-import { createOrg, signUp, uniqueEmail } from "./helpers";
-
-/** Acts like the edge agent: pairs with the code, then uploads one batch. */
-async function fakeAgent(request: APIRequestContext, code: string) {
-  const pair = await request.post("/api/device/pair", {
-    data: { code, edge_device_id: "edge-e2e", agent_version: "0.5.0" },
-  });
-  expect(pair.ok()).toBeTruthy();
-  const { token } = await pair.json();
-  const now = Math.floor(Date.now() / 1000);
-  const minute = now - (now % 60) - 60;
-  const upload = await request.post("/api/device/ingest", {
-    headers: { Authorization: `Bearer ${token}` },
-    data: {
-      batch_id: `b-${now}`,
-      agent_version: "0.5.0",
-      status: { detector: { name: "yolox_tiny", license: "Apache-2.0" }, upload: { pending: 0 } },
-      cameras: [{ id: "door", name: "Entrance", state: "running", connected: true, fps: 9.8, lines: ["entrance"] }],
-      line_counts: [{ camera_id: "door", window_start: minute, line: "entrance", class_name: "*", in_count: 7, out_count: 3 }],
-    },
-  });
-  expect(upload.ok()).toBeTruthy();
-}
+import { createOrg, fakeAgent, signUp, uniqueEmail } from "./helpers";
 
 test("add a site, pair a device with a code, see its camera and counts, remove it", async ({ page, request }) => {
   await signUp(page, "Dana Device", uniqueEmail("devices"));

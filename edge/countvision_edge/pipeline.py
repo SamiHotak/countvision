@@ -101,6 +101,9 @@ class CameraPipeline:
         self._cam_lock = threading.Lock()
         self.frames_read = 0
         self.events_total = 0
+        self.paused = False  # outside the camera's schedule (opening hours)
+        self.last_frame: Frame | None = None  # newest frame read (memory only; for snapshots)
+        self._schedule_check: tuple[int, bool] = (-1, True)  # (second, active) cache
 
     # -- setup --------------------------------------------------------------------------
 
@@ -140,7 +143,10 @@ class CameraPipeline:
         if cam is None:
             return
         old = self.engine
+        if cam.classes != self.cam.classes:
+            self._class_ids = self.detector.class_ids(cam.classes)
         self.cam = cam
+        self._schedule_check = (-1, True)  # the schedule may have changed
         if old is None:
             return
         closed = old.finish()
@@ -159,6 +165,16 @@ class CameraPipeline:
         log.info(
             "Camera %s: new geometry (%d lines, %d zones)", cam.id, len(cam.lines), len(cam.zones)
         )
+
+    def is_active(self, ts: float) -> bool:
+        """Inside the schedule? (checked at most once per second)"""
+        schedule = self.cam.schedule
+        if schedule is None:
+            return True
+        second = int(ts)
+        if self._schedule_check[0] != second:
+            self._schedule_check = (second, schedule.is_active(ts))
+        return self._schedule_check[1]
 
     def process(self, frame: Frame) -> FrameResult:
         """Run detection, tracking and analytics on one frame (no scheduling)."""
@@ -224,11 +240,23 @@ class CameraPipeline:
                     self.heartbeat.maybe_emit()
                     continue
                 self.frames_read += 1
+                self.last_frame = frame
                 if self._last_index is not None:
                     gap = frame.index - self._last_index - 1
                     if gap > 0 and self._is_live:
                         self.heartbeat.frames_dropped(gap)
                 self._last_index = frame.index
+                if self._pending_cam is not None:  # also while paused (a new schedule)
+                    self._apply_pending(frame.size)
+                active = self.is_active(frame.ts)
+                if active != (not self.paused):
+                    self.paused = not active
+                    log.info("Camera %s: %s (schedule)", self.cam.id,
+                             "paused" if self.paused else "counting again")
+                if self.paused:
+                    self.heartbeat.frame_skipped()
+                    self.heartbeat.maybe_emit()
+                    continue
                 if not self.scheduler.should_process(frame.media_ts):
                     self.heartbeat.frame_skipped()
                     self.heartbeat.maybe_emit()

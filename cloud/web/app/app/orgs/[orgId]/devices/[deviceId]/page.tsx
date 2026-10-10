@@ -20,10 +20,12 @@ import {
   timeAgo,
   type Camera,
   type DeviceDetail,
+  type LiveMessage,
   type Org,
   type Site,
 } from "@/lib/api";
 import { cameraHealth, deviceHealth } from "@/lib/device";
+import { liveLabel, useLive } from "@/lib/live";
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -39,7 +41,10 @@ function CameraRow({ cam, org, online, onRenamed }: {
 }) {
   const h = cameraHealth(cam, online);
   const canEdit = roleRank(org.my_role) >= roleRank("member");
-  const lines = Object.keys(cam.today).length ? Object.keys(cam.today) : cam.lines;
+  // configured lines first, then lines that only have counts today (e.g. renamed)
+  const lines = [...cam.lines, ...Object.keys(cam.today).filter((l) => !cam.lines.includes(l))];
+  const editor = `/app/orgs/${org.id}/cameras/${cam.id}`;
+  const sending = cam.desired_version > cam.applied_version;
 
   async function rename() {
     const name = window.prompt("Camera name", cam.name)?.trim();
@@ -72,10 +77,20 @@ function CameraRow({ cam, org, online, onRenamed }: {
           id {cam.edge_camera_id}
           {cam.zones.length ? `, zones: ${cam.zones.join(", ")}` : ""}
         </p>
+        {sending && cam.config_error ? (
+          <p className="mt-1 text-sm text-danger">New lines not used by the device: {cam.config_error}</p>
+        ) : sending ? (
+          <p className="mt-1 text-sm text-warn">{online ? "Sending new lines to the device" : "New lines wait until the device is online"}</p>
+        ) : null}
+        <Link href={editor} className="mt-2 inline-block text-sm text-accent" data-testid="edit-lines">
+          {canEdit ? "Edit lines and zones" : "View lines and zones"}
+        </Link>
       </div>
       <div>
         {lines.length === 0 ? (
-          <p className="text-sm text-muted">No counting line yet. Draw one in the edge app.</p>
+          <p className="text-sm text-muted">
+            No counting line yet. {canEdit ? <Link href={editor} className="text-accent">Draw one</Link> : null}
+          </p>
         ) : (
           <table className="w-full table-fixed text-left">
             <caption className="sr-only">Counts today for {cam.name}</caption>
@@ -90,8 +105,12 @@ function CameraRow({ cam, org, online, onRenamed }: {
               {lines.map((line) => (
                 <tr key={line} className="border-t border-rule">
                   <td className="truncate py-1.5 pr-3">{line}</td>
-                  <td className="py-1.5 text-right text-xl font-semibold">{cam.today[line]?.in ?? 0}</td>
-                  <td className="py-1.5 pl-4 text-right text-xl font-semibold text-muted">{cam.today[line]?.out ?? 0}</td>
+                  <td className="py-1.5 text-right text-xl font-semibold" data-testid="count-in">
+                    <span key={cam.today[line]?.in ?? 0} className="cv-tick">{cam.today[line]?.in ?? 0}</span>
+                  </td>
+                  <td className="py-1.5 pl-4 text-right text-xl font-semibold text-muted" data-testid="count-out">
+                    <span key={cam.today[line]?.out ?? 0} className="cv-tick">{cam.today[line]?.out ?? 0}</span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -160,12 +179,42 @@ function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
     }
   }, [org.id, deviceId]);
 
+  // Live: crossings add to today's numbers at once; status messages update the cameras.
+  const onLive = React.useCallback((msg: LiveMessage) => {
+    if (msg.type === "count" && msg.device_id === deviceId) {
+      setD((cur) => cur && {
+        ...cur,
+        cameras: cur.cameras.map((c) => {
+          if (c.id !== msg.camera_id) return c;
+          const t = c.today[msg.line] ?? { in: 0, out: 0 };
+          return { ...c, today: { ...c.today, [msg.line]: { ...t, [msg.direction]: t[msg.direction] + 1 } } };
+        }),
+      });
+    } else if (msg.type === "device" && msg.device_id === deviceId) {
+      setD((cur) => cur && {
+        ...cur, online: true, last_seen_at: msg.last_seen_at,
+        cameras: cur.cameras.map((c) => {
+          const u = msg.cameras.find((x) => x.camera_id === c.id);
+          return u ? { ...c, state: u.state, connected: u.connected, fps: u.fps, applied_version: u.applied_version,
+            desired_version: u.desired_version, config_error: u.config_error } : c;
+        }),
+      });
+      if (msg.cameras.some((x) => !d?.cameras.find((c) => c.id === x.camera_id))) void load(); // a new camera
+    } else if ((msg.type === "refresh" && msg.device_id === deviceId) || msg.type === "config") {
+      void load();
+    }
+  }, [deviceId, load, d]);
+  const live = useLive(org.id, onLive);
+
   React.useEffect(() => {
     void load();
     api.get<Site[]>(`/api/orgs/${org.id}/sites`).then(setSites).catch(() => undefined);
-    const timer = setInterval(() => void load(), 10_000);
-    return () => clearInterval(timer);
   }, [load, org.id]);
+  React.useEffect(() => {
+    // fallback and "offline" detection: the live stream only says when something happens
+    const timer = setInterval(() => void load(), live === "live" ? 30_000 : 10_000);
+    return () => clearInterval(timer);
+  }, [load, live]);
 
   async function revoke() {
     if (!d || !window.confirm(`Remove ${d.name}? It stops sending data at once. Its numbers stay. ` +
@@ -248,6 +297,9 @@ function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
       <Panel>
         <PanelHead title={`Cameras (${d.camera_count})`}>
           <span className="text-sm text-faint">Today since midnight, {d.site_timezone.replace("_", " ")}</span>
+          <span className="flex items-center gap-2 text-sm text-faint" data-testid="live-state">
+            <StatusDot health={live === "live" ? "ok" : "idle"} /> {liveLabel(live)}
+          </span>
         </PanelHead>
         {d.cameras.length === 0 ? (
           <p className="px-5 py-6 text-muted">

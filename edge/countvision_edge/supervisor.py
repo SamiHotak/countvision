@@ -14,7 +14,11 @@
   raises an alert: a WARNING in the log, ``alert`` in status.json and a ``camera_offline``
   event in the database (``camera_online`` with the outage length when it is back).
 
-No image ever leaves a worker. status.json contains only numbers and redacted camera URLs.
+* When paired with the cloud: the uploader sends the numbers, and ConfigSync (cloud_sync.py)
+  receives lines/zones/classes/schedules drawn in the web app and applies them to the running
+  camera within seconds. Snapshot requests get ONE pixelated, scaled-down JPEG.
+
+No video ever leaves a worker. status.json contains only numbers and redacted camera URLs.
 """
 
 from __future__ import annotations
@@ -29,9 +33,11 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from . import __version__
+from .cloud_sync import ConfigSync, apply_doc, load_overlay, report_doc, save_overlay
 from .config import CameraConfig, EdgeConfig, redact_uri
 from .detectors.base import Detector
 from .errors import CountVisionError, SourceError
@@ -39,12 +45,14 @@ from .inputs import create_source
 from .inputs.base import FrameSource
 from .inputs.live_source import Backoff
 from .pipeline import CameraPipeline, FrameResult, RunSummary
+from .privacy import limit_width, pixelate_boxes
 from .storage import SqliteBuffer
 from .types import Detections, Event
 
 log = logging.getLogger(__name__)
 
 STATUS_FILE = "status.json"
+SNAPSHOT_MAX_WIDTH = 960
 
 
 class SharedDetector(Detector):
@@ -91,6 +99,9 @@ class CameraHealth:
     offline_since: float | None = None
     alert: str | None = None
     last_error: str | None = None
+    paused: bool = False  # outside the schedule (opening hours)
+    config_version: int = 0  # cloud config version in use (0 = the YAML config)
+    config_error: str | None = None
 
 
 class CameraWorker(threading.Thread):
@@ -127,6 +138,8 @@ class CameraWorker(threading.Thread):
         self._lock = threading.Lock()
         self._rate_mark: tuple[float, int] | None = None  # (monotonic time, frames) for the FPS
         self.connect_deadline = 0.0  # a new live stream gets this long before it counts as offline
+        self.last_result: FrameResult | None = None  # newest analysed frame (memory only)
+        self._frame_size: tuple[int, int] | None = None
 
     def run(self) -> None:
         while not self.stop_event.is_set():
@@ -143,10 +156,10 @@ class CameraWorker(threading.Thread):
                         self.cam.source.reconnect.open_timeout_s + self.cam.source.reconnect.stall_timeout_s
                     )
                 self.health.state = "connecting" if source.is_live else "running"
-                callback = None
-                if self.on_result is not None:
-                    def callback(result: FrameResult, _cam=self.cam.id) -> None:
-                        self.on_result(_cam, result)  # type: ignore[misc]
+                def callback(result: FrameResult, _cam=self.cam.id) -> None:
+                    self.last_result = result  # replaced every frame, never written anywhere
+                    if self.on_result is not None:
+                        self.on_result(_cam, result)
                 summary = pipeline.run(source, self.stop_event, max_frames=self.max_frames,
                                        on_result=callback)
                 self.summaries.append(summary)
@@ -180,6 +193,28 @@ class CameraWorker(threading.Thread):
         log.warning("Camera %s: restarting in %.0f s (%s)", self.cam.id, delay, exc)
         self.stop_event.wait(delay)
 
+    @property
+    def frame_size(self) -> tuple[int, int] | None:
+        """(width, height) of the camera picture, once a frame was read."""
+        frame = self.last_frame
+        if frame is not None:
+            self._frame_size = frame.size
+        return self._frame_size
+
+    @property
+    def last_frame(self):
+        pipeline = self.pipeline
+        return pipeline.last_frame if pipeline is not None else None
+
+    def reconfigure(self, cam: CameraConfig) -> None:
+        """New lines/zones/classes/schedule: used by the running pipeline from the next frame and
+        by every restart after that."""
+        with self._lock:
+            self.cam = cam
+            pipeline = self.pipeline
+        if pipeline is not None:
+            pipeline.reconfigure(cam)
+
     def refresh(self) -> CameraHealth:
         """Update connection numbers from the source and pipeline (called by the supervisor)."""
         with self._lock:
@@ -204,6 +239,7 @@ class CameraWorker(threading.Thread):
             elif self._rate_mark is None:
                 self._rate_mark = (now, frames)
             h.frames_processed = frames
+            h.paused = pipeline.paused
         return h
 
 
@@ -229,13 +265,19 @@ class Supervisor:
         self.clock = clock
         self.device_id = cfg.resolve_device_id()
         self.status_path = Path(cfg.data_dir) / STATUS_FILE
-        self.workers = [
-            CameraWorker(cam, cfg, self.detector, buffer, self.stop_event, max_frames=max_frames,
-                         on_result=on_result, source_factory=source_factory)
-            for cam in (cameras if cameras is not None else cfg.cameras)
-        ]
+        self._overlay = load_overlay(cfg.data_dir)
+        self._config_lock = threading.Lock()
+        self.workers = []
+        for cam in (cameras if cameras is not None else cfg.cameras):
+            worker = CameraWorker(self._with_overlay(cam), cfg, self.detector, buffer, self.stop_event,
+                                  max_frames=max_frames, on_result=on_result, source_factory=source_factory)
+            saved = self._overlay.get(cam.id)
+            if saved and worker.cam is not cam:
+                worker.health.config_version = int(saved.get("version", 0))
+            self.workers.append(worker)
         self.started_at: float | None = None
         self.uploader = None  # cloud.CloudUploader when paired (see start_uploader)
+        self.config_sync: ConfigSync | None = None  # when paired (see start_config_sync)
         self._last_status: dict | None = None
 
     # -- lifecycle ----------------------------------------------------------------------
@@ -269,29 +311,130 @@ class Supervisor:
         if self.uploader is not None:
             self.uploader.start()
 
+    def start_config_sync(self, sync: ConfigSync | None = None) -> None:
+        """Receive configs and snapshot requests from the cloud (when paired). ``sync`` for tests."""
+        if sync is None:
+            from .cloud import Credentials
+
+            creds = Credentials.load(self.cfg.data_dir) if self.cfg.cloud.enabled else None
+            if creds is None or not self.cfg.cloud.config_sync:
+                return
+            sync = ConfigSync(creds, apply_config=self.apply_camera_config, take_snapshot=self.snapshot,
+                              url=self.cfg.cloud.url, timeout_s=self.cfg.cloud.timeout_s)
+        self.config_sync = sync
+        sync.applied.update({w.cam.id: w.health.config_version for w in self.workers
+                             if w.health.config_version})
+        sync.start()
+
     def cloud_status(self) -> dict:
-        """Status for the cloud: like status.json, cameras with the names of their lines/zones."""
+        """Status for the cloud: like status.json, plus every camera's lines/zones/classes/schedule
+        (normalized) and the cloud config version in use."""
         status = dict(self._last_status or self.status())
-        by_id = {w.cam.id: w.cam for w in self.workers}
+        by_id = {w.cam.id: w for w in self.workers}
         cameras = []
         for cam in status.pop("cameras", []):
-            conf = by_id.get(cam["camera_id"])
-            cameras.append({
-                "id": cam["camera_id"], "name": cam.get("name") or cam["camera_id"], "state": cam["state"],
+            worker = by_id.get(cam["camera_id"])
+            conf = worker.cam if worker else None
+            item = {
+                "id": cam["camera_id"], "name": cam.get("name") or cam["camera_id"],
+                "state": "paused" if cam.get("paused") and cam["state"] == "running" else cam["state"],
                 "connected": cam.get("connected"), "fps": cam.get("fps"), "reconnects": cam.get("reconnects"),
                 "alert": cam.get("alert"),
                 "lines": [line.name for line in conf.lines] if conf else [],
                 "zones": [zone.name for zone in conf.zones] if conf else [],
-            })
+            }
+            if worker is not None and conf is not None:
+                item.update(
+                    config=report_doc(conf, worker.frame_size),
+                    config_version=worker.health.config_version,
+                    config_error=worker.health.config_error,
+                    snapshots_allowed=bool(self.cfg.privacy.snapshots),
+                    frame=list(worker.frame_size) if worker.frame_size else None,
+                )
+            cameras.append(item)
         status.pop("pid", None)
         status["cameras"] = cameras
         return status
+
+    # -- config from the cloud ----------------------------------------------------------
+
+    def _with_overlay(self, cam: CameraConfig) -> CameraConfig:
+        saved = self._overlay.get(cam.id)
+        if not saved or not saved.get("config"):
+            return cam
+        try:
+            new = apply_doc(cam, saved["config"], saved.get("timezone"))
+            self.detector.class_ids(new.classes)
+        except Exception as exc:  # noqa: BLE001 - a bad saved file must not stop the camera
+            log.warning("Camera %s: saved cloud config not used (%s); using the YAML config", cam.id, exc)
+            return cam
+        log.info("Camera %s: using cloud config v%s (%s)", cam.id, saved.get("version"),
+                 Path(self.cfg.data_dir) / "cloud_config.json")
+        return new
+
+    def apply_camera_config(self, camera_id: str, version: int, doc: dict,
+                            timezone: str | None) -> str | None:
+        """Apply a config from the cloud to a running camera. Returns an error text or None."""
+        worker = next((w for w in self.workers if w.cam.id == camera_id), None)
+        if worker is None:
+            return f"camera {camera_id} is not configured on this device"
+        with self._config_lock:
+            try:
+                new = apply_doc(worker.cam, doc, timezone, worker.frame_size)
+                self.detector.class_ids(new.classes)  # the model must know every class
+            except Exception as exc:  # noqa: BLE001 - reported to the web app as text
+                error = _short_error(exc)
+                worker.health.config_error = error
+                self._report_now()
+                return error
+            worker.reconfigure(new)
+            worker.health.config_version, worker.health.config_error = version, None
+            self._overlay[camera_id] = {"version": version, "config": doc, "timezone": timezone}
+            try:
+                save_overlay(self.cfg.data_dir, self._overlay)
+            except OSError as exc:
+                log.warning("Could not save the cloud config (%s); it is used until the next restart", exc)
+        self._report_now()
+        return None
+
+    def _report_now(self) -> None:
+        self._last_status = None  # the next upload reports the new version at once
+        if self.uploader is not None and hasattr(self.uploader, "wake"):
+            self.uploader.wake()
+
+    def snapshot(self, camera_id: str) -> bytes:
+        """ONE privacy-safe JPEG of the newest frame: every detected person/vehicle pixelated,
+        max 960 px wide. Memory only. Raises when not allowed or no picture yet."""
+        if not self.cfg.privacy.snapshots:
+            raise PermissionError("snapshots are switched off on this device (privacy.snapshots: false)")
+        worker = next((w for w in self.workers if w.cam.id == camera_id), None)
+        if worker is None:
+            raise LookupError(f"camera {camera_id} is not configured on this device")
+        frame = worker.last_frame
+        if frame is None or worker.health.state not in ("running", "connecting", "finished"):
+            raise RuntimeError("the camera has no picture right now (offline or still starting)")
+        if worker.cam.source.is_live and frame.ts < self.clock() - 30:
+            raise RuntimeError("the newest picture is older than 30 s (camera stalled)")
+        image = frame.image.copy()
+        # A fresh detection on exactly this frame, ALL classes (not only the counted ones): a
+        # snapshot for a car park still pixelates the people walking through it.
+        boxes = [tuple(b) for b in self.detector.detect(image).xyxy.reshape(-1, 4)]
+        result = worker.last_result
+        if result is not None:
+            boxes += [t.xyxy for t in result.tracks]
+        pixelate_boxes(image, boxes)
+        image = limit_width(image, SNAPSHOT_MAX_WIDTH)
+        ok, encoded = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+        if not ok:
+            raise RuntimeError("could not encode the picture")
+        return encoded.tobytes()
 
     def run_forever(self, stop: threading.Event | None = None, *, upload: bool = True) -> None:
         """Start, then check every second until everything ended or ``stop`` is set."""
         self.start()
         if upload:
             self.start_uploader()
+            self.start_config_sync()
         next_status = 0.0
         try:
             while self.alive:
@@ -307,6 +450,8 @@ class Supervisor:
             self.join(timeout=15)
             self.check_alerts()
             self.write_status()
+            if self.config_sync is not None:
+                self.config_sync.stop()
             if self.uploader is not None:
                 self.uploader.stop()
                 self.uploader.join(timeout=5)
@@ -368,6 +513,8 @@ class Supervisor:
             "privacy": {"preview": self.cfg.privacy.preview, "stores_images": False},
             "cameras": [asdict(w.refresh()) for w in self.workers],
             "upload": asdict(self.uploader.state) if self.uploader is not None else {"state": "disabled"},
+            "config_sync": ({"state": self.config_sync.state, "last_error": self.config_sync.last_error}
+                            if self.config_sync is not None else {"state": "disabled"}),
         }
 
     def write_status(self) -> Path:
@@ -379,6 +526,11 @@ class Supervisor:
         tmp.write_text(json.dumps(status, indent=2), encoding="utf-8")
         os.replace(tmp, self.status_path)
         return self.status_path
+
+
+def _short_error(exc: Exception) -> str:
+    text = str(exc).strip().splitlines()
+    return (" ".join(line.strip() for line in text[:4]) or type(exc).__name__)[:290]
 
 
 def _duration(seconds: float) -> str:
@@ -427,11 +579,23 @@ def check_health(status_path: str | Path, max_age_s: float = 60.0, now: float | 
         if upload.get("last_error") and upload["state"] != "ok":
             line += f" ({upload['last_error']})"
         lines.append(line)
+    sync = data.get("config_sync") or {}
+    if sync.get("state") and sync["state"] != "disabled":
+        line = f"  cloud config: {sync['state']}"
+        if sync.get("last_error") and sync["state"] != "ok":
+            line += f" ({sync['last_error']})"
+        lines.append(line)
     for cam in data.get("cameras", []):
         fps = "-" if cam.get("fps") is None else f"{cam['fps']:.1f}"
         line = (f"  {cam['camera_id']}: {cam['state']}, {fps} FPS, "
                 f"{cam.get('frames_processed', 0)} frames, reconnects {cam.get('reconnects', 0)}, "
                 f"restarts {cam.get('restarts', 0)}")
+        if cam.get("paused"):
+            line += "  (paused: outside the schedule)"
+        if cam.get("config_version"):
+            line += f"  cloud config v{cam['config_version']}"
+        if cam.get("config_error"):
+            line += f"  CONFIG NOT APPLIED: {cam['config_error']}"
         if cam.get("alert"):
             line += f"  ALERT: {cam['alert']}"
         if cam.get("last_error") and cam["state"] != "running":

@@ -10,6 +10,7 @@ import { Panel, RoleBadge } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-dot";
 import { api, roleRank, timeAgo, type Device, type Org, type Site } from "@/lib/api";
 import { deviceHealth } from "@/lib/device";
+import { useLiveReload } from "@/lib/live";
 import { cn } from "@/lib/utils";
 
 function Stat({ value, label, href }: { value: React.ReactNode; label: string; href?: string }) {
@@ -42,15 +43,12 @@ function Overview({ org }: { org: Org }) {
   const [sites, setSites] = React.useState<Site[] | null>(null);
   const [devices, setDevices] = React.useState<Device[] | null>(null);
 
-  React.useEffect(() => {
-    const load = () => {
-      api.get<Site[]>(`/api/orgs/${org.id}/sites`).then(setSites).catch(() => setSites([]));
-      api.get<Device[]>(`/api/orgs/${org.id}/devices`).then(setDevices).catch(() => setDevices([]));
-    };
-    load();
-    const timer = setInterval(load, 15_000);
-    return () => clearInterval(timer);
+  const load = React.useCallback(() => {
+    api.get<Site[]>(`/api/orgs/${org.id}/sites`).then(setSites).catch(() => setSites([]));
+    api.get<Device[]>(`/api/orgs/${org.id}/devices`).then(setDevices).catch(() => setDevices([]));
   }, [org.id]);
+  React.useEffect(load, [load]);
+  useLiveReload(org.id, load); // device status changes show within seconds
 
   const active = (devices ?? []).filter((d) => !d.revoked);
   const cams = active.reduce((n, d) => n + d.camera_count, 0);

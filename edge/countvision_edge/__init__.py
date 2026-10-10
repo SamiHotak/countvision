@@ -7,7 +7,7 @@ only numbers in a local SQLite buffer. No video leaves the device.
 
 import os as _os
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 # "Nothing leaves the device" includes the libraries we use. ONNX Runtime 1.2x+ sends usage
 # telemetry to Microsoft when it is imported (seen in phase 2 B: mobile.events.data.microsoft.com)
