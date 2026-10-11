@@ -238,6 +238,28 @@ jobs:
               assert r.headers["Content-Type"].startswith("text/event-stream")
               assert b'"hello"' in r.read(), "no hello on the live stream"
           print("live stream ok")
+          # Phase 4 A: dashboard numbers, PDF (fonts in the image), report email with PDF via Celery -> Mailpit
+          dash = call("GET", f"/api/orgs/{org['id']}/sites/{site['id']}/dashboard", cookie=cookie)[0]
+          assert dash["totals"]["in"] == 1 and dash["lines"][0]["line"] == "entrance", dash["totals"]
+          req = urllib.request.Request(f"{base}/api/orgs/{org['id']}/sites/{site['id']}/report.pdf", headers={"Cookie": cookie})
+          with urllib.request.urlopen(req) as r:
+              assert r.read(4) == b"%PDF"
+          import re
+          found = json.loads(urllib.request.urlopen("http://localhost:8025/api/v1/search?query=to:ci@example.com").read())
+          msg = json.loads(urllib.request.urlopen(f"http://localhost:8025/api/v1/message/{found['messages'][0]['ID']}").read())
+          token = re.search(r"verify-email\?token=([A-Za-z0-9_\-]+)", msg["Text"]).group(1)
+          call("POST", "/api/auth/verify-email", {"token": token}, cookie=cookie)
+          me = call("GET", f"/api/orgs/{org['id']}/members", cookie=cookie)[0][0]
+          sched = call("POST", f"/api/orgs/{org['id']}/report-schedules",
+                       {"site_id": site["id"], "frequency": "daily", "recipients": [me["user_id"]], "attach_csv": True}, cookie=cookie)[0]
+          print(call("POST", f"/api/orgs/{org['id']}/report-schedules/{sched['id']}/send", {}, cookie=cookie)[0])
+          for _ in range(30):
+              res = json.loads(urllib.request.urlopen("http://localhost:8025/api/v1/search?query=subject:%22daily%20report%22").read())
+              if res["messages"]:
+                  break
+              time.sleep(2)
+          assert res["messages"] and res["messages"][0]["Attachments"] == 2, res
+          print("report email with PDF + CSV reached Mailpit")
           PY
           docker compose -f cloud/compose.yaml exec -T db psql -U countvision -tAc \
             "SELECT hypertable_name FROM timescaledb_information.hypertables ORDER BY 1" | tee /tmp/ht.txt

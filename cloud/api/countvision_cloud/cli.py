@@ -1,4 +1,4 @@
-"""Command line: countvision-cloud migrate | wait | cleanup | serve.
+"""Command line: countvision-cloud migrate | wait | cleanup | serve | sample-data | send-reports.
 
 Docker runs "countvision-cloud wait && countvision-cloud migrate" before the API starts.
 """
@@ -81,6 +81,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8001)
     s.add_argument("--reload", action="store_true")
+    sd = sub.add_parser("sample-data", help="add a 'Demo café' site with 5 weeks of invented numbers")
+    sd.add_argument("--org", required=True, help="organization id or slug")
+    sd.add_argument("--days", type=int, default=35)
+    sub.add_parser("send-reports", help="send the report emails that are due now")
     args = parser.parse_args(argv)
     setup_logging(get_settings().log_level)
 
@@ -94,6 +98,30 @@ def main(argv: list[str] | None = None) -> int:
         from .tasks import cleanup
 
         print(cleanup())
+    elif args.cmd == "sample-data":
+        from sqlalchemy import or_, select
+
+        from .db import db_session
+        from .product.services import sample_data
+        from .saas.models import Organization
+
+        with db_session() as db:
+            cond = Organization.slug == args.org
+            try:
+                import uuid
+
+                cond = or_(cond, Organization.id == uuid.UUID(args.org))
+            except ValueError:
+                pass
+            org = db.scalar(select(Organization).where(cond))
+            if org is None:
+                raise SystemExit(f"Organization not found: {args.org}")
+            site = sample_data.create(db, org, days=args.days)
+            print(f"Created '{site.name}' ({site.id}) in {org.name}")
+    elif args.cmd == "send-reports":
+        from .tasks import send_due_reports
+
+        print(send_due_reports())
     elif args.cmd == "serve":
         import uvicorn
 

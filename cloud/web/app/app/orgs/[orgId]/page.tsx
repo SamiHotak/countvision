@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { PageTitle } from "@/components/app-shell";
 import { OrgGate } from "@/components/org-gate";
-import { Panel, RoleBadge } from "@/components/ui/panel";
+import { HourSpark } from "@/components/charts";
+import { Button } from "@/components/ui/button";
+import { Notice, Panel, PanelHead, RoleBadge } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-dot";
-import { api, roleRank, timeAgo, type Device, type Org, type Site } from "@/lib/api";
+import { api, errorText, roleRank, timeAgo, type Device, type Org, type Site } from "@/lib/api";
+import { changeTone, fmtChange, fmtNum, type SiteToday } from "@/lib/dashboard";
 import { deviceHealth } from "@/lib/device";
 import { useLiveReload } from "@/lib/live";
 import { cn } from "@/lib/utils";
@@ -39,14 +42,60 @@ function Step({ n, done, children }: { n: number; done: boolean; children: React
   );
 }
 
+function SiteToday({ s, href }: { s: SiteToday; href: string }) {
+  const tone = changeTone(s.change_pct);
+  return (
+    <li>
+      <Link href={href} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-2 px-5 py-4 no-underline hover:bg-raise/50 sm:grid-cols-[minmax(0,1.4fr)_auto_minmax(0,1fr)]"
+        data-testid="site-today">
+        <div className="min-w-0">
+          <p className="truncate font-medium">{s.name}</p>
+          <p className="truncate text-sm text-muted">
+            {s.camera_count === 0 ? "No cameras yet" : s.occupancy !== null
+              ? `${fmtNum(s.occupancy)} inside now${s.queue ? `, ${fmtNum(s.queue)} waiting` : ""}`
+              : `${fmtNum(s.today_out)} went out`}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[28px] font-semibold leading-none" style={{ fontVariantNumeric: "proportional-nums" }}>{fmtNum(s.today_in)}</p>
+          <p className="mt-1 text-sm">
+            <span className={cn(tone === "up" && "text-accent", tone === "down" && "text-danger", tone === "flat" && "text-muted")}>
+              {fmtChange(s.change_pct)}</span>
+            <span className="text-faint"> vs last week</span>
+          </p>
+        </div>
+        <div className="col-span-2 sm:col-span-1"><HourSpark hours={s.hours} label={`Visitors per hour today at ${s.name}`} /></div>
+      </Link>
+    </li>
+  );
+}
+
 function Overview({ org }: { org: Org }) {
   const [sites, setSites] = React.useState<Site[] | null>(null);
   const [devices, setDevices] = React.useState<Device[] | null>(null);
+  const [today, setToday] = React.useState<SiteToday[] | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const router = useRouter();
 
   const load = React.useCallback(() => {
     api.get<Site[]>(`/api/orgs/${org.id}/sites`).then(setSites).catch(() => setSites([]));
     api.get<Device[]>(`/api/orgs/${org.id}/devices`).then(setDevices).catch(() => setDevices([]));
+    api.get<{ sites: SiteToday[] }>(`/api/orgs/${org.id}/dashboard`).then((d) => setToday(d.sites)).catch(() => setToday([]));
   }, [org.id]);
+
+  async function addSample() {
+    setBusy(true);
+    try {
+      const res = await api.post<{ site_id: string }>(`/api/orgs/${org.id}/sample-data`);
+      router.push(`/app/orgs/${org.id}/sites/${res.site_id}`);
+    } catch (e) {
+      setError(errorText(e));
+      setBusy(false);
+    }
+  }
+  const isAdmin = roleRank(org.my_role) >= roleRank("admin");
+  const hasSample = (sites ?? []).some((s) => s.name === "Demo café (sample data)");
   React.useEffect(load, [load]);
   useLiveReload(org.id, load); // device status changes show within seconds
 
@@ -68,6 +117,28 @@ function Overview({ org }: { org: Org }) {
           href={`${base}/devices`} />
         <Stat value={sites?.length ?? "–"} label={sites?.length === 1 ? "site" : "sites"} href={`${base}/sites`} />
       </Panel>
+
+      {error ? <Notice tone="error" className="mt-6">{error}</Notice> : null}
+
+      {today && today.length > 0 ? (
+        <Panel className="mt-6">
+          <PanelHead title="Visitors today">
+            <span className="text-sm text-faint">compared with the same time last week</span>
+          </PanelHead>
+          <ul className="divide-y divide-rule" aria-label="Sites today">
+            {today.map((s) => <SiteToday key={s.site_id} s={s} href={`${base}/sites/${s.site_id}`} />)}
+          </ul>
+        </Panel>
+      ) : null}
+
+      {ready && isAdmin && !hasSample && active.length === 0 ? (
+        <Panel className="mt-6 flex flex-wrap items-center gap-4 p-5 sm:p-6">
+          <p className="mr-auto max-w-[56ch] text-muted">
+            No camera yet? Look around with a sample café: five weeks of invented numbers, dashboards and a PDF report.
+          </p>
+          <Button variant="secondary" onClick={() => void addSample()} busy={busy}>Add sample data</Button>
+        </Panel>
+      ) : null}
 
       {ready && active.length === 0 ? (
         <Panel className="mt-6 p-5 sm:p-6">

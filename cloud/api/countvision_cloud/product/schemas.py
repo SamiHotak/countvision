@@ -403,3 +403,68 @@ class SnapshotOut(BaseModel):
     request_id: str
     status: str  # pending | ready | error
     message: str | None = None
+
+
+# --- dashboards and reports (Phase 4 A) -------------------------------------------------------
+
+class VisitorLine(_In):
+    camera_id: uuid.UUID
+    line: str = Field(min_length=1, max_length=64)
+
+
+class VisitorLinesIn(_In):
+    """Which lines count as visitors. ``null`` = every line (the default)."""
+
+    lines: list[VisitorLine] | None = Field(default=None, max_length=256)
+
+
+class ReportScheduleIn(_In):
+    site_id: uuid.UUID
+    frequency: str = Field(pattern=r"^(daily|weekly|monthly)$")
+    weekday: int = Field(default=0, ge=0, le=6)  # weekly: 0 = Monday
+    hour: int = Field(default=7, ge=0, le=23)
+    recipients: list[uuid.UUID] = Field(min_length=1, max_length=100)  # user ids of members
+    attach_csv: bool = False
+
+
+class ReportSchedulePatch(_In):
+    site_id: uuid.UUID | None = None
+    frequency: str | None = Field(default=None, pattern=r"^(daily|weekly|monthly)$")
+    weekday: int | None = Field(default=None, ge=0, le=6)
+    hour: int | None = Field(default=None, ge=0, le=23)
+    recipients: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=100)
+    attach_csv: bool | None = None
+    enabled: bool | None = None
+
+
+class ReportRecipientOut(BaseModel):
+    user_id: uuid.UUID
+    name: str
+    email: str
+    email_verified: bool
+
+
+class ReportScheduleOut(BaseModel):
+    id: uuid.UUID
+    site_id: uuid.UUID
+    site_name: str
+    timezone: str
+    frequency: str
+    weekday: int
+    hour: int
+    recipients: list[ReportRecipientOut]
+    attach_csv: bool
+    enabled: bool
+    created_at: datetime
+    last_sent_at: datetime | None
+    last_period_end: str | None
+    last_error: str | None
+    next_send_at: datetime | None
+    next_period: dict[str, str] | None
+
+
+class SendNowOut(BaseModel):
+    ok: bool = True
+    emails: int
+    period_from: str
+    period_to: str

@@ -7,11 +7,12 @@ link goes out. Delivery is done by the Celery worker (CV_EMAIL_DELIVERY=celery) 
 
 from __future__ import annotations
 
+import base64
 import html
 import logging
 import smtplib
 import ssl
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from email.message import EmailMessage
 from email.utils import make_msgid
 
@@ -29,14 +30,38 @@ SENT: list[Mail] = []
 
 
 @dataclass(frozen=True)
+class Attachment:
+    """A file sent with an email. ``data_b64`` = base64, so the mail stays JSON for Celery."""
+
+    filename: str
+    mime: str
+    data_b64: str
+
+    @classmethod
+    def of(cls, filename: str, mime: str, data: bytes) -> Attachment:
+        return cls(filename, mime, base64.b64encode(data).decode("ascii"))
+
+    @property
+    def data(self) -> bytes:
+        return base64.b64decode(self.data_b64)
+
+
+@dataclass(frozen=True)
 class Mail:
     to: str
     subject: str
     text: str
     html: str
+    attachments: tuple[Attachment, ...] = field(default_factory=tuple)
 
-    def as_dict(self) -> dict[str, str]:
+    def as_dict(self) -> dict:
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Mail:
+        files = tuple(Attachment(**a) for a in data.get("attachments") or ())
+        return cls(to=data["to"], subject=data["subject"], text=data["text"], html=data["html"],
+                   attachments=files)
 
 
 # --- templates ------------------------------------------------------------------------------
@@ -162,7 +187,8 @@ def deliver(mail: Mail) -> None:
         SENT.append(mail)
         return
     if settings.email_backend == "console":
-        log.info("EMAIL to=%s subject=%r\n%s", mail.to, mail.subject, mail.text)
+        log.info("EMAIL to=%s subject=%r attachments=%s\n%s", mail.to, mail.subject,
+                 [a.filename for a in mail.attachments], mail.text)
         return
 
     msg = EmailMessage()
@@ -172,6 +198,9 @@ def deliver(mail: Mail) -> None:
     msg["Message-ID"] = make_msgid(domain="countvision")
     msg.set_content(mail.text)
     msg.add_alternative(mail.html, subtype="html")
+    for file in mail.attachments:
+        main, _, sub = file.mime.partition("/")
+        msg.add_attachment(file.data, maintype=main, subtype=sub or "octet-stream", filename=file.filename)
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
         if settings.smtp_starttls:
             smtp.starttls(context=ssl.create_default_context())

@@ -22,9 +22,9 @@ log = logging.getLogger(__name__)
 
 @celery.task(name="countvision_cloud.tasks.send_email", autoretry_for=(OSError,), retry_backoff=True,
              retry_backoff_max=600, max_retries=8)
-def send_email(mail: dict[str, str]) -> None:
+def send_email(mail: dict) -> None:
     """Send one email. SMTP problems are retried with growing pauses (up to ~1 hour in total)."""
-    email.deliver(email.Mail(**mail))
+    email.deliver(email.Mail.from_dict(mail))
 
 
 @celery.task(name="countvision_cloud.tasks.cleanup")
@@ -43,6 +43,18 @@ def cleanup() -> dict[str, int]:
                 delete(IngestBatch).where(IngestBatch.received_at <= now - timedelta(days=14))).rowcount or 0,
         }
     log.info("Cleanup: %s", result)
+    return result
+
+
+@celery.task(name="countvision_cloud.tasks.send_due_reports")
+def send_due_reports() -> dict[str, int]:
+    """Every 5 minutes: email the reports that are due (see product/services/reports.py)."""
+    from .product.services import reports
+
+    with db_session() as db:
+        result = reports.send_due(db)
+    if result["sent"] or result["failed"]:
+        log.info("Reports: %s", result)
     return result
 
 

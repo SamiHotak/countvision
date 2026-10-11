@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { PageTitle } from "@/components/app-shell";
@@ -96,6 +96,19 @@ function SitesView({ org }: { org: Org }) {
     void load();
   }, [load]);
 
+  const router = useRouter();
+  const [adding, setAdding] = React.useState(false);
+  async function addSample() {
+    setAdding(true);
+    try {
+      const res = await api.post<{ site_id: string }>(`/api/orgs/${org.id}/sample-data`);
+      router.push(`/app/orgs/${org.id}/sites/${res.site_id}`);
+    } catch (e) {
+      setNotice({ tone: "error", text: errorText(e) });
+      setAdding(false);
+    }
+  }
+
   async function remove(site: Site) {
     if (!window.confirm(`Delete the site "${site.name}"?`)) return;
     try {
@@ -110,6 +123,9 @@ function SitesView({ org }: { org: Org }) {
   return (
     <>
       <PageTitle title="Sites">
+        {canDelete && sites && !sites.some((x) => x.name === "Demo café (sample data)") ? (
+          <Button variant="secondary" busy={adding} onClick={() => void addSample()}>Add sample data</Button>
+        ) : null}
         {canEdit ? <Button onClick={() => { setEditing(null); setOpen(true); }}>Add site</Button> : null}
       </PageTitle>
       {notice ? <Notice tone={notice.tone} className="mb-5">{notice.text}</Notice> : null}
@@ -133,12 +149,18 @@ function SitesView({ org }: { org: Org }) {
             {sites.map((s) => (
               <li key={s.id} className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3.5" data-testid="site-row">
                 <div className="min-w-0 flex-1 basis-56">
-                  <p className="truncate font-medium">{s.name}</p>
+                  <Link href={`/app/orgs/${org.id}/sites/${s.id}`} className="block truncate font-medium no-underline hover:text-accent">
+                    {s.name}
+                  </Link>
                   <p className="truncate text-sm text-muted">{s.address || s.timezone.replace("_", " ")}</p>
                 </div>
                 <Link href={`/app/orgs/${org.id}/devices`} className="text-sm text-muted no-underline hover:text-text">
                   {s.device_count} {s.device_count === 1 ? "device" : "devices"}, {s.camera_count}{" "}
                   {s.camera_count === 1 ? "camera" : "cameras"}
+                </Link>
+                <Link href={`/app/orgs/${org.id}/sites/${s.id}`}
+                  className="inline-flex h-8 items-center rounded-[var(--radius-s)] bg-accent px-3 text-sm font-medium text-accent-ink no-underline hover:bg-accent/85">
+                  Dashboard
                 </Link>
                 {canEdit ? (
                   <Button size="sm" variant="secondary" onClick={() => { setEditing(s); setOpen(true); }}>Edit</Button>

@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # "celery" = send in the background worker, "sync" = send inside the request (tests, no worker)
     email_delivery: Literal["celery", "sync"] = "celery"
 
+    # "Add sample data" button (a Demo café with 5 weeks of invented numbers, clearly labelled)
+    sample_data_enabled: bool = True
+
     # Google login: off when the client id is empty
     google_client_id: str | None = None
     google_client_secret: str | None = None

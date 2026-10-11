@@ -9,6 +9,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# DejaVu Sans: fallback font for PDF reports when a site name uses letters Barlow does not have
+# (Arabic, Cyrillic, ...). Small (~2 MB), Bitstream Vera licence (free).
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies first (cached layer), then the code.
 COPY pyproject.toml ./
 RUN mkdir countvision_cloud && echo '__version__ = "0"' > countvision_cloud/__init__.py \

@@ -102,6 +102,48 @@ connection while waiting), `POST /api/device/snapshots/<request>` (JPEG body or 
 Org API added: `GET /cameras/<id>`, `PUT /cameras/<id>/config`, `POST /cameras/<id>/snapshot`,
 `GET /cameras/<id>/snapshot/<request>` (+ `/image`).
 
+## Dashboards and reports (Phase 4 Session A)
+
+**Overview** (`/app/orgs/<org>`): every site with visitors today, the change vs. the same time last
+week, people inside / waiting now and a small 24-hour chart.
+
+**Site dashboard** (Sites → **Dashboard**, `/app/orgs/<org>/sites/<site>`): period Today / Yesterday /
+7 days / 30 days / any dates (up to 366 days; the period is in the address, so a link can be shared).
+- Visitors in (big number) and the change vs. last week (up to 7 days) or the previous period of the
+  same length. A running day is compared with the **same time** last week. When the cameras ran
+  less than half as long in the comparison period (for example the first weeks after installation)
+  there is **no** percentage: "+467 %" would only measure missing data.
+- Inside now, in the queue now, went out, busiest hour, average visit, data coverage.
+- Visitors per hour (1-2 days) or per day, with last week as a thin line; hover or arrow keys show the
+  values; **Show table** shows the same numbers as a table.
+- Lines with IN/OUT. **Counts as visitors**: tick only the door lines, not aisle lines (members).
+- What was counted (people, bicycles, ...), length of visits (zone visits), weekday x hour pattern
+  (average per hour over 4 weeks; only hours when the cameras ran count), each zone over time,
+  and how complete the data is (analysed time vs. counting hours).
+- Live: a crossing on one of the site's cameras updates the page within ~2 s.
+- Downloads: **PDF report**, **CSV lines** (in/out per hour or day, per class), **CSV zones**. CSV
+  uses ";" and decimal commas when the browser writes numbers German style (Excel), "," otherwise.
+
+Where the numbers come from: finished minutes from the 1-minute rows, the newest seconds from the
+single crossing events (the border is the newest analysed minute of each camera), so the dashboard
+is exact and live at the same time. Everything is in the site's time zone.
+
+**Reports** page: emails a PDF report (optional CSV) to members of the organization: daily (about
+yesterday), weekly on a chosen day (about the 7 days before) or monthly on the 1st (about last
+month), at a chosen hour in the site's time zone. Celery beat checks every 5 minutes; each report is
+sent once (also after a server pause only the newest missed one). Only members with a confirmed
+email get it; one email per person. **Send now** sends the newest finished period at once (max 10 per
+hour). Errors are shown on the page; after 3 failed tries that period is skipped.
+
+**Sample data**: on an organization without devices the overview offers **Add sample data**: a site
+"Demo café (sample data)" with 5 weeks of invented numbers (opening hours, a busy Saturday, a queue,
+one camera outage). Remove it on its dashboard. Command line: `countvision-cloud sample-data --org <slug>`.
+
+API added: `GET /api/orgs/<org>/dashboard`, `GET /sites/<id>/dashboard?from=&to=`,
+`PUT /sites/<id>/visitor-lines`, `GET /sites/<id>/export.csv?from=&to=&kind=lines|zones&bucket=minute|hour|day&delimiter=,|;`,
+`GET /sites/<id>/report.pdf?from=&to=`, `GET|POST /report-schedules`, `PATCH|DELETE /report-schedules/<id>`,
+`POST /report-schedules/<id>/send`, `POST|DELETE /sample-data`. CLI: `countvision-cloud send-reports`.
+
 ## What works (Phase 3 Sessions A and B)
 
 - Sites (name, address, time zone), devices with one-time pairing codes, device tokens (stored hashed),
@@ -166,7 +208,7 @@ npm run dev
 
 ```powershell
 docker compose up -d db redis                       # in cloud\
-pytest cloud/api/tests                              # API: 51 tests, real Postgres + Redis
+pytest cloud/api/tests                              # API: 77 tests, real Postgres + Redis
 
 # Browser tests: API with the in-memory mailbox + built web app
 $env:CV_EMAIL_BACKEND="memory"; $env:CV_EMAIL_DELIVERY="sync"; $env:CV_SIGNUPS_PER_IP_HOUR="1000"
@@ -180,7 +222,9 @@ GitHub CI runs both (`cloud` job) and builds and smoke-tests the full Docker sta
 ## Licences of the parts
 
 FastAPI, Starlette, SQLAlchemy, Alembic, pydantic, uvicorn, redis-py, httpx, Celery, argon2-cffi,
-Next.js, React, Tailwind, Barlow font (OFL): permissive (MIT / BSD / Apache / OFL).
+Next.js, React, Tailwind, Barlow font (OFL), ReportLab (PDF, BSD): permissive (MIT / BSD / Apache / OFL).
+The PDF reports embed Barlow (OFL, `product/reports/fonts/OFL.txt`); DejaVu Sans is the fallback font
+for other alphabets (free licence).
 psycopg: LGPL-3.0 (used as a normal library: fine for closed code too).
 TimescaleDB community features: Timescale License (free to use in your own SaaS; you may not sell
 "TimescaleDB as a service"). Valkey (Redis-compatible): BSD. Mailpit: MIT (development only).

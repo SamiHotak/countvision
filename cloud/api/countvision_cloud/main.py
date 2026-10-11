@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, Response
 
 from . import __version__
 from .logging_setup import setup_logging
-from .product.routers import device_api, live_api, manage
+from .product.routers import dashboards, device_api, live_api, manage
 from .saas.errors import install_error_handlers
 from .saas.routers import auth, dev, health, me, orgs
 from .settings import get_settings
@@ -57,7 +57,7 @@ def create_app() -> FastAPI:
         return response
 
     for router in (health.router, auth.router, me.router, orgs.router, orgs.invite_router, manage.router,
-                   device_api.router, live_api.router):
+                   dashboards.router, device_api.router, live_api.router):
         app.include_router(router)
     if settings.environment != "production" and settings.email_backend == "memory":
         app.include_router(dev.router)

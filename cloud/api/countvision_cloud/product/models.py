@@ -10,7 +10,7 @@ Only numbers are stored. There are no images, no video, no track coordinates.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -43,6 +43,9 @@ class Site(Base):
                                           server_default=text("'Europe/Berlin'"))
     address: Mapped[str | None] = mapped_column(String(240))
     created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    # Which lines count as "visitors" on the dashboard: [{"camera_id": "<uuid>", "line": "Door"}].
+    # None = every line. A shop with a door line and an aisle line must not add both together.
+    visitor_lines: Mapped[list[dict[str, str]] | None] = mapped_column(JSONB)
 
     devices: Mapped[list[Device]] = relationship(back_populates="site")
 
@@ -142,7 +145,10 @@ class LineCount(Base):
     out_count: Mapped[int] = mapped_column(Integer)
     received_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
 
-    __table_args__ = (PrimaryKeyConstraint("camera_id", "line", "class_name", "window_start"),)
+    __table_args__ = (
+        PrimaryKeyConstraint("camera_id", "line", "class_name", "window_start"),
+        Index("ix_line_counts_camera_ws", "camera_id", "window_start"),  # dashboards read by time
+    )
 
 
 class ZoneStat(Base):
@@ -165,7 +171,10 @@ class ZoneStat(Base):
     dwell_max_s: Mapped[float] = mapped_column(Float)
     received_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
 
-    __table_args__ = (PrimaryKeyConstraint("camera_id", "zone", "class_name", "window_start"),)
+    __table_args__ = (
+        PrimaryKeyConstraint("camera_id", "zone", "class_name", "window_start"),
+        Index("ix_zone_stats_camera_ws", "camera_id", "window_start"),
+    )
 
 
 class Coverage(Base):
@@ -215,6 +224,35 @@ class IngestBatch(Base):
     rejected: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
 
     __table_args__ = (UniqueConstraint("device_id", "batch_id", name="uq_ingest_batches_device_batch"),)
+
+
+class ReportSchedule(Base):
+    """A report that is emailed regularly (PDF) to members of the organization (Phase 4 A).
+
+    Recipients are stored as user ids: a person who leaves the organization stops getting it.
+    ``last_period_end`` is the last local date that was sent, so a report is never sent twice and
+    a pause (server down) sends only the newest missed report, not a flood.
+    """
+
+    __tablename__ = "report_schedules"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), index=True)
+    frequency: Mapped[str] = mapped_column(String(8))  # daily | weekly | monthly
+    weekday: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))  # weekly: send day
+    hour: Mapped[int] = mapped_column(Integer, default=7, server_default=text("7"))  # local send hour
+    recipients: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    attach_csv: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    last_sent_at: Mapped[datetime | None]
+    last_period_end: Mapped[date | None]
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    failures: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+
+    site: Mapped[Site] = relationship()
 
 
 TIMESERIES = {

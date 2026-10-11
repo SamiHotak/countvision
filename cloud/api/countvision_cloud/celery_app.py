@@ -1,4 +1,4 @@
-"""Celery: background worker (emails now; reports, video jobs, alerts later) and beat (timers).
+"""Celery: background worker (emails, report emails; video jobs and alerts later) and beat (timers).
 
 Worker:  celery -A countvision_cloud.celery_app worker --loglevel=INFO
 Beat:    celery -A countvision_cloud.celery_app beat --loglevel=INFO
@@ -25,6 +25,7 @@ celery.conf.update(
     task_ignore_result=True,
     beat_schedule={
         "cleanup-expired": {"task": "countvision_cloud.tasks.cleanup", "schedule": crontab(minute=17)},
+        "send-due-reports": {"task": "countvision_cloud.tasks.send_due_reports", "schedule": 300.0},
         "beat-heartbeat": {"task": "countvision_cloud.tasks.heartbeat", "schedule": 60.0},
     },
 )
