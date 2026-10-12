@@ -248,10 +248,13 @@ class BarChart(Flowable):
         compare_label: str,
         width: float,
         height: float = 62 * mm,
+        labels: list[str] | None = None,
+        legend: str = "Visitors in",
     ) -> None:
         super().__init__()
         self.series, self.bucket, self.days, self.compare_label = series, bucket, days, compare_label
         self.width, self.height = width, height
+        self.labels, self.legend = labels, legend
 
     def wrap(self, *_):
         return self.width, self.height
@@ -305,7 +308,9 @@ class BarChart(Flowable):
         for i, v in enumerate(self.series):
             if i % every == 0:
                 c.drawCentredString(
-                    left + i * slot + slot / 2, bottom - 11, bucket_label(v["t"], self.bucket, self.days)
+                    left + i * slot + slot / 2,
+                    bottom - 11,
+                    self.labels[i] if self.labels else bucket_label(v["t"], self.bucket, self.days),
                 )
         # legend
         y = self.height - 9
@@ -313,9 +318,9 @@ class BarChart(Flowable):
         c.roundRect(left, y - 1, 9, 7, 1.5, stroke=0, fill=1)
         c.setFillColor(INK)
         c.setFont(f["regular"], 8)
-        c.drawString(left + 13, y, "Visitors in")
+        c.drawString(left + 13, y, self.legend)
         if any(compare):
-            x2 = left + 13 + c.stringWidth("Visitors in", f["regular"], 8) + 16
+            x2 = left + 13 + c.stringWidth(self.legend, f["regular"], 8) + 16
             c.setStrokeColor(MUTED)
             c.setLineWidth(1.1)
             c.line(x2, y + 2.5, x2 + 12, y + 2.5)
@@ -719,5 +724,187 @@ def build_pdf(dash: dict[str, Any], org_name: str, now: datetime | None = None) 
             ),
         ]
 
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    return buf.getvalue()
+
+
+# --------------------------------------------------------------------------- video analysis report
+
+
+def _clock(seconds: float | None) -> str:
+    if seconds is None:
+        return "–"
+    s = int(round(seconds))
+    return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+
+
+def build_video_pdf(job: Any, result: dict[str, Any], org_name: str) -> bytes:
+    """Report of one analysed video file. Times are positions in the video (0:00 = start)."""
+    st = styles()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=18 * mm,
+        title=f"CountVision video analysis {job.name}",
+        author="CountVision",
+        creator="CountVision",
+    )
+    width = A4[0] - 36 * mm
+    f = fonts()
+    created = datetime.now().strftime("%d.%m.%Y %H:%M")
+
+    def footer(canvas, document) -> None:
+        canvas.saveState()
+        canvas.setFont(f["regular"], 7.5)
+        canvas.setFillColor(FAINT)
+        canvas.drawString(
+            18 * mm,
+            10 * mm,
+            plain(
+                f"CountVision video analysis, {job.name}, created {created}. "
+                "The uploaded video was deleted after the analysis."
+            ),
+        )
+        canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f"Page {document.page}")
+        canvas.restoreState()
+
+    totals = result["totals"]
+    kpi = Table(
+        [
+            [
+                [
+                    Paragraph(markup(num(totals["in"])), st["kpi"]),
+                    Spacer(1, 3),
+                    Paragraph("In (all lines)", st["kpi_label"]),
+                ],
+                [
+                    Paragraph(markup(num(totals["out"])), st["kpi"]),
+                    Spacer(1, 3),
+                    Paragraph("Out (all lines)", st["kpi_label"]),
+                ],
+                [
+                    Paragraph(markup(_clock(job.duration_s)), st["kpi"]),
+                    Spacer(1, 3),
+                    Paragraph("Video length", st["kpi_label"]),
+                ],
+                [
+                    Paragraph(
+                        markup(duration(result["dwell"]["avg_s"])),
+                        ParagraphStyle("k2", parent=st["kpi"], fontSize=18, leading=22),
+                    ),
+                    Spacer(1, 3),
+                    Paragraph("Average visit in zones", st["kpi_label"]),
+                ],
+            ]
+        ],
+        colWidths=[width / 4] * 4,
+    )
+    kpi.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LINEBEFORE", (1, 0), (-1, 0), 0.5, RULE),
+                ("LEFTPADDING", (0, 0), (0, 0), 0),
+                ("LEFTPADDING", (1, 0), (-1, 0), 10),
+            ]
+        )
+    )
+    classes = ", ".join(CLASS_LABELS.get(c, c) for c in result.get("classes", []))
+    story: list[Flowable] = [
+        Paragraph(markup(f"COUNTVISION  ·  {org_name}"), st["brand"]),
+        Spacer(1, 4),
+        Paragraph(markup(job.name), st["title"]),
+        Paragraph(
+            markup(f"Video analysis: {job.width}x{job.height}, {job.fps:g} FPS, counted: {classes}"),
+            st["muted"],
+        ),
+        Spacer(1, 12),
+        kpi,
+        Spacer(1, 16),
+    ]
+    tl = result.get("timeline", [])
+    if tl and len(tl) > 1:
+        step = max(1, -(-len(tl) // 60))  # at most ~60 bars
+        bars, labels = [], []
+        for i in range(0, len(tl), step):
+            part = tl[i : i + step]
+            bars.append({"t": "", "in": sum(p["in"] + p["out"] for p in part), "compare_in": 0})
+            labels.append(_clock(part[0]["minute"] * 60))
+        story += [
+            Paragraph(
+                markup(f"Crossings (in + out) per {'minute' if step == 1 else f'{step} minutes'} of video"),
+                st["h2"],
+            ),
+            BarChart(bars, "minute", 1, "", width, labels=labels, legend="Crossings, all lines"),
+            Spacer(1, 14),
+        ]
+    rows = [["Line", "In", "Out", "By class (in / out)"]]
+    for ln in result["lines"]:
+        by = ", ".join(
+            f"{CLASS_LABELS.get(k, k)} {v['in']}/{v['out']}" for k, v in sorted(ln["classes"].items())
+        )
+        rows.append([ln["name"], num(ln["in"]), num(ln["out"]), by or "–"])
+    if len(rows) > 1:
+        story += [
+            KeepTogether(
+                [
+                    Paragraph("Lines", st["h2"]),
+                    _table(rows, [w * width for w in (0.3, 0.12, 0.12, 0.46)], right_from=1),
+                ]
+            ),
+            Spacer(1, 14),
+        ]
+    if result["zones"]:
+        rows = [["Zone", "Kind", "Average", "Most at once", "Visits", "Average visit"]]
+        for z in result["zones"]:
+            q = z["kind"] == "queue"
+            rows.append(
+                [
+                    z["name"],
+                    "queue" if q else "area",
+                    num(z["queue_avg"] if q else z["occ_avg"]),
+                    num(z["queue_max"] if q else z["occ_max"]),
+                    num(z["visits"]),
+                    duration(z["dwell_avg_s"]),
+                ]
+            )
+        story += [
+            KeepTogether(
+                [
+                    Paragraph("Zones", st["h2"]),
+                    _table(rows, [w * width for w in (0.26, 0.12, 0.13, 0.17, 0.13, 0.19)], right_from=2),
+                ]
+            ),
+            Spacer(1, 14),
+        ]
+    if result["dwell"]["count"]:
+        story += [
+            KeepTogether(
+                [
+                    Paragraph("Length of visits", st["h2"]),
+                    HBars(
+                        [(b["label"], b["count"], num(b["count"])) for b in result["dwell"]["buckets"]],
+                        width / 2,
+                    ),
+                ]
+            ),
+            Spacer(1, 14),
+        ]
+    story += [
+        Paragraph("How it was counted", st["h2"]),
+        Paragraph(
+            markup(
+                f"Detector: {result.get('detector')}. Frames analysed: {num(result.get('frames_processed'))} "
+                f"of {num(result.get('frames_read'))}. "
+                f"Processing time: {duration(result.get('processing_s'))}. "
+                "Counts depend on the camera angle and the lines: check a part of the annotated video by eye."
+            ),
+            st["small"],
+        ),
+    ]
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     return buf.getvalue()

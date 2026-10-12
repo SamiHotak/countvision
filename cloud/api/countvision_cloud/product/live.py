@@ -58,6 +58,8 @@ def bump_device(device_id: uuid.UUID | str) -> int:
 
 @event.listens_for(Session, "after_commit")
 def _after_commit(session: Session) -> None:
+    if session.in_nested_transaction():  # a savepoint ended (begin_nested): wait for the real commit
+        return
     for org_id, message in session.info.pop(_OUTBOX, []):
         publish(org_id, message)
 

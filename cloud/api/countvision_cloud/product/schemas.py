@@ -468,3 +468,77 @@ class SendNowOut(BaseModel):
     emails: int
     period_from: str
     period_to: str
+
+
+# --- alerts, channels, API keys (Phase 4 B) ---------------------------------------------------
+
+class ChannelIn(_In):
+    kind: str = Field(pattern=r"^(email|telegram|webhook)$")
+    name: str = Field(min_length=1, max_length=120)
+    recipients: list[uuid.UUID] | None = Field(default=None, max_length=100)  # email
+    bot_token: str | None = Field(default=None, min_length=20, max_length=200)  # telegram
+    chat_id: int | str | None = None
+    chat_title: str | None = Field(default=None, max_length=200)
+    url: str | None = Field(default=None, max_length=500)  # webhook
+    events: list[str] | None = Field(default=None, max_length=10)
+
+
+class ChannelPatch(_In):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    enabled: bool | None = None
+    recipients: list[uuid.UUID] | None = Field(default=None, max_length=100)
+    bot_token: str | None = Field(default=None, min_length=20, max_length=200)
+    chat_id: int | str | None = None
+    chat_title: str | None = Field(default=None, max_length=200)
+    url: str | None = Field(default=None, max_length=500)
+    events: list[str] | None = Field(default=None, max_length=10)
+    rotate_secret: bool | None = None
+
+
+class TelegramChatsIn(_In):
+    bot_token: str = Field(min_length=20, max_length=200)
+
+
+class AlertRuleIn(_In):
+    site_id: uuid.UUID
+    name: str | None = Field(default=None, max_length=120)
+    kind: str = Field(pattern=r"^(occupancy|queue|camera_offline|traffic_drop)$")
+    camera_id: uuid.UUID | None = None
+    zone: str | None = Field(default=None, max_length=64)
+    threshold: float = Field(default=0, ge=0, le=100000)
+    duration_min: int = Field(default=5, ge=1, le=24 * 60)
+    channel_ids: list[uuid.UUID] = Field(min_length=1, max_length=10)
+
+
+class AlertRulePatch(_In):
+    site_id: uuid.UUID | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    kind: str | None = Field(default=None, pattern=r"^(occupancy|queue|camera_offline|traffic_drop)$")
+    camera_id: uuid.UUID | None = None
+    zone: str | None = Field(default=None, max_length=64)
+    threshold: float | None = Field(default=None, ge=0, le=100000)
+    duration_min: int | None = Field(default=None, ge=1, le=24 * 60)
+    channel_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=10)
+    enabled: bool | None = None
+
+
+class ApiKeyIn(_In):
+    name: str = Field(min_length=1, max_length=120)
+
+
+# --- video analysis jobs (Phase 4 B) ------------------------------------------------------------
+
+class VideoJobIn(_In):
+    name: str = Field(min_length=1, max_length=200)
+    size_bytes: int = Field(gt=0)
+
+
+class VideoConfigIn(CameraConfigDoc):
+    """Lines/zones/classes like a camera, plus: pixelate people in the annotated video, analyse
+    at most ``sample_fps`` frames per second (None = every frame), make an annotated video at all."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    blur: bool = True
+    sample_fps: float | None = Field(default=10, ge=1, le=60)
+    annotated: bool = True

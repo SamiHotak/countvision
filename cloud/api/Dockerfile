@@ -1,30 +1,46 @@
-# CountVision cloud API (also used for the Celery worker and beat).
-# Build from the cloud/ folder:  docker compose build api
+# CountVision cloud: API, Celery worker, beat and the video worker all use this one image.
+# Build context = the repository root (it needs edge/ for the video analysis engine):
+#   docker compose build api        (in cloud/)
+# What goes into the build: Dockerfile.dockerignore next to this file (a short allow list).
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CV_DATA_DIR=/data \
+    CV_VIDEO_MODEL=/opt/models/yolox_tiny.onnx \
+    ORT_DISABLE_TELEMETRY=1
 
 WORKDIR /app
 
-# DejaVu Sans: fallback font for PDF reports when a site name uses letters Barlow does not have
-# (Arabic, Cyrillic, ...). Small (~2 MB), Bitstream Vera licence (free).
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core \
+# fonts-dejavu-core: PDF fallback font for other alphabets (Bitstream Vera licence).
+# ffmpeg: annotated videos as H.264 (plays in browsers). It runs as a separate program (LGPL/GPL
+#         binary from Debian, not linked into our code).
+# libgl1, libglib2.0-0: needed by OpenCV (video analysis).
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core ffmpeg libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Dependencies first (cached layer), then the code.
-COPY pyproject.toml ./
-RUN mkdir countvision_cloud && echo '__version__ = "0"' > countvision_cloud/__init__.py \
-    && pip install . && pip uninstall -y countvision-cloud && rm -rf countvision_cloud build
+# Dependencies first (cached layers), then the code.
+COPY cloud/api/pyproject.toml ./cloud/
+RUN mkdir cloud/countvision_cloud && echo '__version__ = "0"' > cloud/countvision_cloud/__init__.py \
+    && pip install ./cloud && pip uninstall -y countvision-cloud && rm -rf cloud/countvision_cloud cloud/build
 
-COPY countvision_cloud ./countvision_cloud
-COPY alembic.ini ./
-RUN pip install --no-deps . \
-    && useradd --uid 10002 --create-home countvision
+# The edge counting engine (same code as on the devices) + YOLOX-Tiny (Apache-2.0, 20 MB, checked).
+COPY edge/pyproject.toml edge/README.md ./edge/
+COPY edge/countvision_edge ./edge/countvision_edge
+RUN pip install "./edge[onnx]" \
+    && countvision-edge models download yolox_tiny --dir /opt/models
+
+COPY cloud/api/countvision_cloud ./cloud/countvision_cloud
+COPY cloud/api/alembic.ini ./cloud/
+RUN pip install --no-deps ./cloud \
+    && useradd --uid 10002 --create-home countvision \
+    && mkdir -p /data && chown countvision /data
 
 USER countvision
+WORKDIR /app/cloud
+VOLUME /data
 EXPOSE 8000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \

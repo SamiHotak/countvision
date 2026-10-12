@@ -81,21 +81,25 @@ services:
 
   # FastAPI. Waits for db + redis, runs the migrations, then serves. Docs: http://localhost:8001/api/docs
   api:
-    build: ./api
+    build:
+      context: ..                       # the repo root: the image also contains edge/ (video analysis)
+      dockerfile: cloud/api/Dockerfile
     image: countvision-cloud-api:dev
     environment: *api-env
     ports: ["127.0.0.1:8001:8000"]
+    volumes: [jobs-data:/data]          # uploaded videos (until analysed) and results
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
     restart: unless-stopped
     logging: *logging
 
-  # Background jobs (emails now; reports, alerts, video analysis later).
+  # Background jobs: emails, report emails, alerts, webhooks, reading uploaded videos.
   worker:
     image: countvision-cloud-api:dev
     pull_policy: never   # built by the "api" service, never downloaded
     environment: *api-env
+    volumes: [jobs-data:/data]
     command: ["celery", "-A", "countvision_cloud.celery_app", "worker", "--loglevel=INFO", "--concurrency=2",
               "--hostname=worker@%h"]
     depends_on:
@@ -109,7 +113,28 @@ services:
     restart: unless-stopped
     logging: *logging
 
-  # Timers (cleanup every hour, heartbeat every minute).
+  # Video analysis: counts uploaded videos, ONE at a time (it uses all CPU cores it gets).
+  # CPU only here (YOLOX-Tiny, about 2x real time on a laptop for 768x432 video). On a GPU server:
+  # an image with onnxruntime-gpu and CV_VIDEO_DEVICE=cuda (Phase 5).
+  video-worker:
+    image: countvision-cloud-api:dev
+    pull_policy: never
+    environment: *api-env
+    volumes: [jobs-data:/data]
+    command: ["celery", "-A", "countvision_cloud.celery_app", "worker", "--loglevel=INFO", "--queues=video",
+              "--concurrency=1", "--prefetch-multiplier=1", "--hostname=video@%h"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A countvision_cloud.celery_app inspect ping -d video@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+    logging: *logging
+
+  # Timers (cleanup every hour, heartbeat every minute, alerts every minute, reports, webhooks).
   beat:
     image: countvision-cloud-api:dev
     pull_policy: never
@@ -143,3 +168,4 @@ services:
 volumes:
   db-data:
   redis-data:
+  jobs-data:

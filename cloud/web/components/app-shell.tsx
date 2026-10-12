@@ -90,7 +90,10 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
           <NavLink href={`/app/orgs/${orgId}`} exact>Overview</NavLink>
           <NavLink href={`/app/orgs/${orgId}/devices`}>Devices</NavLink>
           <NavLink href={`/app/orgs/${orgId}/sites`}>Sites</NavLink>
+          <NavLink href={`/app/orgs/${orgId}/alerts`}>Alerts</NavLink>
           <NavLink href={`/app/orgs/${orgId}/reports`}>Reports</NavLink>
+          <NavLink href={`/app/orgs/${orgId}/video`}>Video analysis</NavLink>
+          <NavLink href={`/app/orgs/${orgId}/api`}>API</NavLink>
           <NavLink href={`/app/orgs/${orgId}/members`}>Members</NavLink>
           <NavLink href={`/app/orgs/${orgId}/settings`}>Settings</NavLink>
         </>
@@ -141,7 +144,7 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
 
       {/* The camera editor is a drawing tool: it gets more width than the other pages. */}
       <main className={cn("mx-auto w-full px-4 py-6 sm:px-8 sm:py-9",
-        path.includes("/cameras/") ? "max-w-[1440px]" : /\/sites\/[^/]+/.test(path) ? "max-w-[1200px]" : "max-w-[1040px]")}>
+        path.includes("/cameras/") || /\/video\/[^/]+/.test(path) ? "max-w-[1440px]" : /\/sites\/[^/]+/.test(path) ? "max-w-[1200px]" : "max-w-[1040px]")}>
         {!me.email_verified ? <VerifyBanner /> : null}
         {children}
       </main>

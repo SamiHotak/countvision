@@ -255,6 +255,161 @@ class ReportSchedule(Base):
     site: Mapped[Site] = relationship()
 
 
+
+# ---------------------------------------------------------------------- Phase 4 B
+
+
+class NotificationChannel(Base):
+    """Where alerts (and webhook events) go: email to members, a Telegram chat, or a webhook URL.
+
+    ``config``: email {"recipients": [user ids]}; telegram {"chat_id", "chat_title"};
+    webhook {"url", "events": [...]}. Secrets (bot token, webhook signing secret) are encrypted in
+    ``secret_enc`` (saas/crypto.py).
+    """
+
+    __tablename__ = "notification_channels"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # email | telegram | webhook
+    name: Mapped[str] = mapped_column(String(120))
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
+    secret_enc: Mapped[str | None] = mapped_column(String(500))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    last_ok_at: Mapped[datetime | None]
+    last_error: Mapped[str | None] = mapped_column(String(300))
+    last_error_at: Mapped[datetime | None]
+
+
+class AlertRule(Base):
+    """A condition on a site that sends a message when it becomes true (and when it is over).
+
+    kind: occupancy (people in an area zone >= threshold for duration_min minutes), queue (people
+    waiting in a queue zone), camera_offline (a camera not counting for duration_min minutes),
+    traffic_drop (visitors in the last duration_min minutes < threshold % of a normal week).
+    """
+
+    __tablename__ = "alert_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    site_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(16))
+    camera_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("cameras.id", ondelete="CASCADE"))
+    zone: Mapped[str | None] = mapped_column(String(64))  # None = all zones of that kind on the site
+    threshold: Mapped[float] = mapped_column(Float, default=0, server_default=text("0"))
+    duration_min: Mapped[int] = mapped_column(Integer, default=5, server_default=text("5"))
+    channel_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    # evaluation state
+    state: Mapped[str] = mapped_column(String(8), default="ok", server_default=text("'ok'"))  # ok | firing
+    true_since: Mapped[datetime | None]  # condition true since (not yet long enough = pending)
+    last_true_at: Mapped[datetime | None]
+    fired_at: Mapped[datetime | None]
+    last_value: Mapped[float | None] = mapped_column(Float)
+    last_eval_at: Mapped[datetime | None]
+    last_message: Mapped[str | None] = mapped_column(String(300))
+
+    site: Mapped[Site] = relationship()
+
+
+class AlertEvent(Base):
+    """History: an alert started (fired) or ended (resolved). Also test messages."""
+
+    __tablename__ = "alert_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("alert_rules.id", ondelete="SET NULL"))
+    site_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sites.id", ondelete="SET NULL"))
+    rule_name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(8))  # fired | resolved
+    value: Mapped[float | None] = mapped_column(Float)
+    message: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+
+    __table_args__ = (Index("ix_alert_events_org_created", "org_id", "created_at"),)
+
+
+class ApiKey(Base):
+    """Key for the public API (read-only). Only the SHA-256 hash is stored; shown once."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    prefix: Mapped[str] = mapped_column(String(16))  # "cvk_ab12cd" for the list
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    last_used_at: Mapped[datetime | None]
+    revoked_at: Mapped[datetime | None]
+
+
+class WebhookDelivery(Base):
+    """One event sent (or to be sent) to one webhook. Retried with growing pauses. Kept 14 days."""
+
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
+    channel_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("notification_channels.id", ondelete="CASCADE"), index=True
+    )
+    event_id: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4)
+    event_type: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(8), default="pending", server_default=text("'pending'"))
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    next_try_at: Mapped[datetime | None]
+    response_code: Mapped[int | None] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"), index=True)
+    delivered_at: Mapped[datetime | None]
+
+    __table_args__ = (Index("ix_webhook_deliveries_due", "status", "next_try_at"),)
+
+
+class VideoJob(Base):
+    """A video file uploaded for analysis (traffic study, event, a camera without network).
+
+    status: uploading -> probing -> ready (draw lines) -> queued -> running -> done | failed |
+    cancelled. The uploaded video is deleted when the analysis ends; the annotated video after
+    CV_VIDEO_KEEP_DAYS; the numbers (``result``) stay until the job is deleted.
+    """
+
+    __tablename__ = "video_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    name: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(12), default="uploading", server_default=text("'uploading'"))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    received_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
+    duration_s: Mapped[float | None] = mapped_column(Float)
+    fps: Mapped[float | None] = mapped_column(Float)
+    frame_count: Mapped[int | None] = mapped_column(Integer)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    config: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    progress: Mapped[float] = mapped_column(Float, default=0, server_default=text("0"))
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    started_at: Mapped[datetime | None]
+    finished_at: Mapped[datetime | None]
+    updated_at: Mapped[datetime | None]  # last progress note from the worker (a dead worker is noticed)
+    video_deleted_at: Mapped[datetime | None]  # annotated video removed (kept numbers)
+
 TIMESERIES = {
     # table -> time column (for hypertables and retention)
     "line_counts": "window_start",

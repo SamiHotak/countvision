@@ -102,6 +102,55 @@ connection while waiting), `POST /api/device/snapshots/<request>` (JPEG body or 
 Org API added: `GET /cameras/<id>`, `PUT /cameras/<id>/config`, `POST /cameras/<id>/snapshot`,
 `GET /cameras/<id>/snapshot/<request>` (+ `/image`).
 
+## Alerts, API, webhooks, video analysis (Phase 4 Session B)
+
+**Alerts** page (`/app/orgs/<org>/alerts`):
+- *Where alerts go* (channels): **Telegram** (bot token from @BotFather, then "Find my chat"), **email**
+  (members with a confirmed address), **webhook** (signed POST). **Send test** tries the channel at once and
+  shows Telegram's / the webhook's answer. Telegram tokens and webhook secrets are stored encrypted
+  (key derived from `CV_SECRET_KEY`: if you change that key, set the channels up again).
+- *Alerts* (rules), checked every minute by Celery beat:
+  - **Too many people**: people in area zones >= limit in each of the last N minutes;
+  - **Long queue**: people waiting in queue zones >= limit for N minutes;
+  - **Camera not counting**: a camera or its computer does not count for N minutes (not checked
+    outside the camera's counting hours);
+  - **Fewer visitors than usual**: visitors in the last N minutes (>= 30) below X % of the same weekday
+    and time in the last 4 weeks (needs 2 weeks where the cameras ran and >= 10 normal visitors).
+  One message when it starts, one when it is over (2 minutes below the limit: no flapping). Minute
+  numbers arrive 1-2 minutes late, so an alert comes 1-3 minutes after the moment.
+- *History*: started / ended, kept 400 days.
+
+**Telegram in 2 minutes**: Telegram → @BotFather → `/newbot` → copy the token → open your bot and send
+"hi" → CountVision Alerts → Add channel → Telegram → paste token → Find my chat → Add channel → Send test.
+
+**API** page: API keys (admins; shown once, stored hashed, revoke any time), curl examples, how to check
+webhook signatures. The public API is read-only at `/api/v1` with its own docs at **/api/v1/docs**:
+`GET /sites`, `/sites/{id}/live`, `/sites/{id}/counts?from=&to=&bucket=minute|hour|day&by=total|line|class`,
+`/sites/{id}/zones`, `/cameras`, `/alerts`. Header `Authorization: Bearer cvk_...`, 120 requests/min per key.
+
+**Webhooks**: JSON `{"id","type","created_at","org_id","data"}`, types `alert.fired`, `alert.resolved`,
+`crossing` (every line crossing, batches of up to 500, within seconds), `counts.hourly` (per site, ~5 min
+after each local hour), `test`. Header `X-CountVision-Signature: t=<unix>,v1=<HMAC-SHA256(secret, "t.body")>`.
+Failed requests are retried after 1, 5, 30, 120, 360 minutes (same `id`), then "failed"; the API page
+shows the last deliveries with a Retry button. Production refuses webhook addresses in private networks.
+
+**Video analysis** (`/app/orgs/<org>/video`): upload a video (MP4, MOV, AVI, MKV …, max 2 GB / 2 hours; in
+8 MB pieces, a broken upload continues where it stopped) → the worker reads it and shows a frame →
+draw lines/zones like in the camera editor, choose classes, 10 FPS or every frame, annotated video with
+people pixelated → **Start counting** → progress live → IN/OUT per line and class, zones, visit lengths,
+counts over the video, annotated H.264 video in the page, PDF and CSV. It uses the SAME counting engine as
+the edge agent (`countvision_edge`) with YOLOX-Tiny (Apache-2.0).
+- Privacy: the uploaded video is **deleted when the analysis ends** (failed/stopped: after 1 day,
+  never started: after 7 days); the annotated video after `CV_VIDEO_KEEP_DAYS` (7); numbers stay until
+  the job is deleted. The customer needs a legal basis for the recording (the page says so).
+- Docker: the **video-worker** container (Celery queue `video`, one video at a time) and the `jobs-data`
+  volume. Without Docker: `CV_VIDEO_RUNNER=thread` runs it inside the API process.
+- Measured in the sandbox (2 CPU cores, CPU only): 768x432 clip with YOLOX-Tiny incl. H.264 encoding
+  at 2.1x real time; the labelled `one-by-one-person-detection` clip: 6/6 crossings right.
+
+The image is bigger now (OpenCV, ONNX Runtime, ffmpeg, the model: about 1.2 GB) and is built from the
+repository root (`cloud/api/Dockerfile`, allow list in `cloud/api/Dockerfile.dockerignore`).
+
 ## Dashboards and reports (Phase 4 Session A)
 
 **Overview** (`/app/orgs/<org>`): every site with visitors today, the change vs. the same time last
@@ -208,7 +257,7 @@ npm run dev
 
 ```powershell
 docker compose up -d db redis                       # in cloud\
-pytest cloud/api/tests                              # API: 77 tests, real Postgres + Redis
+pytest cloud/api/tests                              # API: 94 tests, real Postgres + Redis (pip install -e edge for the video tests)
 
 # Browser tests: API with the in-memory mailbox + built web app
 $env:CV_EMAIL_BACKEND="memory"; $env:CV_EMAIL_DELIVERY="sync"; $env:CV_SIGNUPS_PER_IP_HOUR="1000"
@@ -222,10 +271,12 @@ GitHub CI runs both (`cloud` job) and builds and smoke-tests the full Docker sta
 ## Licences of the parts
 
 FastAPI, Starlette, SQLAlchemy, Alembic, pydantic, uvicorn, redis-py, httpx, Celery, argon2-cffi,
-Next.js, React, Tailwind, Barlow font (OFL), ReportLab (PDF, BSD): permissive (MIT / BSD / Apache / OFL).
+Next.js, React, Tailwind, Barlow font (OFL), ReportLab (PDF, BSD), cryptography (Apache-2.0/BSD), OpenCV (Apache-2.0),
+ONNX Runtime (MIT), YOLOX-Tiny (Apache-2.0): permissive (MIT / BSD / Apache / OFL).
 The PDF reports embed Barlow (OFL, `product/reports/fonts/OFL.txt`); DejaVu Sans is the fallback font
 for other alphabets (free licence).
 psycopg: LGPL-3.0 (used as a normal library: fine for closed code too).
-TimescaleDB community features: Timescale License (free to use in your own SaaS; you may not sell
+ffmpeg (Debian package, LGPL/GPL) runs as a separate program to write H.264 videos; it is not linked
+into CountVision code. TimescaleDB community features: Timescale License (free to use in your own SaaS; you may not sell
 "TimescaleDB as a service"). Valkey (Redis-compatible): BSD. Mailpit: MIT (development only).
 The CountVision code itself is AGPL-3.0 for now (see the root README).

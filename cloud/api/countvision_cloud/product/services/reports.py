@@ -290,7 +290,11 @@ def report_mail(
     if dash["dwell"]["count"]:
         lines.append(f"Average visit in zones: {pdf.duration(dash['dwell']['avg_s'])}.")
     cov = dash["coverage"]["pct"]
-    if cov is not None and cov < 90:
+    if cov is not None and cov < 1:
+        lines.append(
+            "Note: the cameras counted (almost) nothing in this period. Was the device switched on?"
+        )
+    elif cov is not None and cov < 90:
         lines.append(
             f"Note: the cameras ran only {cov:.0f} % of the expected time, so the real numbers are higher."
         )

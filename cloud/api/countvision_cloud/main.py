@@ -14,7 +14,8 @@ from fastapi.responses import JSONResponse, Response
 
 from . import __version__
 from .logging_setup import setup_logging
-from .product.routers import dashboards, device_api, live_api, manage
+from .product.routers import dashboards, device_api, integrations, live_api, manage, video
+from .product.routers.public_api import public_app
 from .saas.errors import install_error_handlers
 from .saas.routers import auth, dev, health, me, orgs
 from .settings import get_settings
@@ -42,7 +43,9 @@ def create_app() -> FastAPI:
         # cross-site form posts, and we do not allow cross-origin requests (no CORS).
         # The device API (/api/device/*) uses a Bearer token, not cookies, so it needs no CSRF header.
         path = request.url.path
-        if request.method in UNSAFE and path.startswith("/api/") and not path.startswith("/api/device/") \
+        # The test fakes (/api/dev/telegram, /api/dev/webhook-sink) are called by our own server.
+        exempt = path.startswith(("/api/device/", "/api/dev/telegram/", "/api/dev/webhook-sink"))
+        if request.method in UNSAFE and path.startswith("/api/") and not exempt \
                 and request.headers.get(CSRF_HEADER) != "1":
             return JSONResponse({"error": {"code": "csrf", "message": "Missing X-CountVision header."}},
                                 status_code=403)
@@ -57,8 +60,9 @@ def create_app() -> FastAPI:
         return response
 
     for router in (health.router, auth.router, me.router, orgs.router, orgs.invite_router, manage.router,
-                   dashboards.router, device_api.router, live_api.router):
+                   dashboards.router, integrations.router, video.router, device_api.router, live_api.router):
         app.include_router(router)
+    app.mount("/api/v1", public_app)  # public API with its own docs at /api/v1/docs
     if settings.environment != "production" and settings.email_backend == "memory":
         app.include_router(dev.router)
         log.warning("Dev outbox enabled at /api/dev/outbox (memory email backend)")

@@ -292,4 +292,6 @@ export type LiveMessage =
     }
   | { type: "config"; camera_id: string; desired_version: number; applied_version: number }
   | { type: "snapshot"; camera_id: string; request_id: string; status: "ready" | "error" }
-  | { type: "refresh"; device_id: string };
+  | { type: "refresh"; device_id: string }
+  | { type: "alert"; rule_id: string; status: "fired" | "resolved"; site_id: string; message: string }
+  | { type: "video_job"; job_id: string; status: string; progress: number };

@@ -26,7 +26,7 @@ from ...saas.errors import AppError
 from .. import live
 from ..models import Camera, CountEvent, Coverage, Device, IngestBatch, LineCount, ZoneStat
 from ..schemas import IngestIn, IngestOut
-from . import camera_config
+from . import camera_config, webhook_events
 
 log = logging.getLogger(__name__)
 
@@ -223,6 +223,9 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
             device.last_data_at = newest_dt
 
     _live_messages(db, device, cams, new_events)
+    webhook_events.queue_crossings(
+        db, device, {c.id: c for c in cams.values()},
+        [e for e in new_events if e.kind == "line_cross" and e.direction in ("in", "out")])
     total = sum(accepted.values())
     result = db.execute(
         insert(IngestBatch).values(device_id=device.id, batch_id=payload.batch_id, rows=total,

@@ -156,6 +156,8 @@ def queue(db: Session, mail: Mail) -> None:
 
 @event.listens_for(Session, "after_commit")
 def _after_commit(session: Session) -> None:
+    if session.in_nested_transaction():  # a savepoint ended (begin_nested): wait for the real commit
+        return
     mails: list[Mail] = session.info.pop(_OUTBOX_KEY, [])
     for mail in mails:
         dispatch(mail)

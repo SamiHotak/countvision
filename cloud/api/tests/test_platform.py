@@ -32,7 +32,9 @@ def test_cleanup_removes_expired_rows(client):
         db.execute(update(EmailToken).values(expires_at=past))
         db.execute(update(Invite).values(expires_at=past))
         db.commit()
-    assert cleanup() == {"sessions": 1, "tokens": 1, "invites": 1, "pairing_codes": 0, "ingest_batches": 0}
+    result = cleanup()
+    assert {k: result[k] for k in ("sessions", "tokens", "invites", "pairing_codes", "ingest_batches")} == \
+        {"sessions": 1, "tokens": 1, "invites": 1, "pairing_codes": 0, "ingest_batches": 0}
     with session_factory()() as db:
         assert db.scalar(select(func.count()).select_from(UserSession)) == 0
 

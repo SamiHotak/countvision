@@ -57,6 +57,30 @@ class Settings(BaseSettings):
     # "celery" = send in the background worker, "sync" = send inside the request (tests, no worker)
     email_delivery: Literal["celery", "sync"] = "celery"
 
+    # Files of video analysis jobs (uploads, annotated videos, reports). Docker: a volume.
+    data_dir: str = "data"
+
+    # Alerts and webhooks (Phase 4 B)
+    telegram_api_url: str = "https://api.telegram.org"  # tests point this at a fake server
+    # Webhooks to private addresses (localhost, 192.168.x.x ...). None = allowed except in
+    # production (protects the server's own network from requests made on a customer's behalf).
+    webhook_allow_private: bool | None = None
+    webhook_timeout_s: float = 10.0
+
+    # Video analysis jobs. "celery" = the video worker container (queue "video"); "thread" = inside
+    # the API process (development without Docker, browser tests); "off" = uploads only.
+    video_runner: Literal["celery", "thread", "off"] = "celery"
+    video_detector: Literal["onnx", "openvino", "blobs"] = "onnx"
+    video_model: str = "models/yolox_tiny.onnx"  # Apache-2.0 YOLOX-Tiny; downloaded when missing
+    video_device: str = "auto"  # auto | cpu | cuda (needs onnxruntime-gpu on a GPU server)
+    video_max_bytes: int = 2 * 1024**3
+    video_max_minutes: int = 120
+    video_keep_days: int = Field(default=7, ge=1, le=90)  # annotated videos are deleted after this
+    video_jobs_per_org: int = 3  # waiting or running at the same time
+
+    # Public API: requests per API key and minute
+    api_rate_per_minute: int = 120
+
     # "Add sample data" button (a Demo café with 5 weeks of invented numbers, clearly labelled)
     sample_data_enabled: bool = True
 
@@ -84,6 +108,12 @@ class Settings(BaseSettings):
         if self.cookie_secure is not None:
             return self.cookie_secure
         return self.web_url.startswith("https://")
+
+    @property
+    def private_webhooks_allowed(self) -> bool:
+        if self.webhook_allow_private is not None:
+            return self.webhook_allow_private
+        return self.environment != "production"
 
     @property
     def google_enabled(self) -> bool:

@@ -1,0 +1,10 @@
+# Build context of the cloud image is the repository root; only these files are sent.
+**
+!cloud/api/pyproject.toml
+!cloud/api/alembic.ini
+!cloud/api/countvision_cloud/**
+!edge/pyproject.toml
+!edge/README.md
+!edge/countvision_edge/**
+**/__pycache__
+**/*.pyc

@@ -128,8 +128,10 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: cloud/web/package-lock.json
-      - name: Install API
-        run: pip install -e "cloud/api[dev]"
+      - name: Install API (+ the edge engine for video analysis, + ffmpeg)
+        run: |
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          pip install -e "cloud/api[dev]" -e "edge[onnx]"
       - name: Lint API
         run: ruff check cloud/api
       - name: API tests (Postgres + Redis)
@@ -148,7 +150,12 @@ jobs:
           CV_EMAIL_BACKEND: memory
           CV_EMAIL_DELIVERY: sync
           CV_SIGNUPS_PER_IP_HOUR: "1000"
+          CV_TELEGRAM_API_URL: http://127.0.0.1:8001/api/dev/telegram
+          CV_VIDEO_RUNNER: thread
+          CV_VIDEO_DETECTOR: blobs
+          CV_DATA_DIR: /tmp/cvdata
         run: |
+          countvision-edge demo --out /tmp/demo --no-video
           countvision-cloud migrate
           nohup countvision-cloud serve --port 8001 > /tmp/api.log 2>&1 &
           (cd cloud/web && nohup npm start > /tmp/web.log 2>&1 &)
@@ -157,7 +164,7 @@ jobs:
         working-directory: cloud/web
         run: |
           npx playwright install --with-deps chromium
-          npx playwright test
+          CV_E2E_VIDEO=/tmp/demo/demo_scene.avi npx playwright test
       - name: Logs and report
         if: failure()
         run: |
@@ -197,6 +204,8 @@ jobs:
             "SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'" | grep -E "^[0-9]"
       - name: Device pairing and upload (hypertables in real TimescaleDB)
         run: |
+          docker compose -f cloud/compose.yaml exec -T api countvision-edge demo --out /tmp/demo --no-video > /dev/null
+          docker compose -f cloud/compose.yaml cp api:/tmp/demo/demo_scene.avi /tmp/demo_scene.avi
           python3 - <<'PY'
           import json, time, urllib.request
           base = "http://localhost:3000"
@@ -260,6 +269,36 @@ jobs:
               time.sleep(2)
           assert res["messages"] and res["messages"][0]["Attachments"] == 2, res
           print("report email with PDF + CSV reached Mailpit")
+          # Phase 4 B: API key + public API, and a real video job in the video-worker container
+          key = call("POST", f"/api/orgs/{org['id']}/api-keys", {"name": "CI"}, cookie=cookie)[0]["key"]
+          req = urllib.request.Request(f"{base}/api/v1/sites", headers={"Authorization": "Bearer " + key})
+          with urllib.request.urlopen(req) as r:
+              assert json.loads(r.read())[0]["name"] == "CI Site"
+          print("public API ok")
+          video = open("/tmp/demo_scene.avi", "rb").read()
+          jobs = f"/api/orgs/{org['id']}/video-jobs"
+          job = call("POST", jobs, {"name": "demo.avi", "size_bytes": len(video)}, cookie=cookie)[0]
+          req = urllib.request.Request(f"{base}{jobs}/{job['id']}/upload?offset=0", data=video, method="PUT",
+                                       headers={"Cookie": cookie, "X-CountVision": "1", "Content-Type": "application/octet-stream"})
+          urllib.request.urlopen(req).read()
+          call("POST", f"{jobs}/{job['id']}/complete", {}, cookie=cookie)
+          for _ in range(60):
+              job = call("GET", f"{jobs}/{job['id']}", cookie=cookie)[0]
+              if job["status"] != "probing":
+                  break
+              time.sleep(1)
+          assert job["status"] == "ready", job
+          call("PUT", f"{jobs}/{job['id']}/config", {"lines": [{"name": "door", "p1": [0.1, 0.5], "p2": [0.9, 0.5]}],
+               "zones": [], "classes": ["person", "car"]}, cookie=cookie)
+          call("POST", f"{jobs}/{job['id']}/start", {}, cookie=cookie)
+          for _ in range(180):
+              job = call("GET", f"{jobs}/{job['id']}", cookie=cookie)[0]
+              if job["status"] in ("done", "failed"):
+                  break
+              time.sleep(1)
+          assert job["status"] == "done", job
+          assert job["files"]["annotated.mp4"] and job["result"]["video_codec"] == "h264", job["result"]
+          print("video job done in the video worker (YOLOX-Tiny, H.264):", job["result"]["totals"])
           PY
           docker compose -f cloud/compose.yaml exec -T db psql -U countvision -tAc \
             "SELECT hypertable_name FROM timescaledb_information.hypertables ORDER BY 1" | tee /tmp/ht.txt

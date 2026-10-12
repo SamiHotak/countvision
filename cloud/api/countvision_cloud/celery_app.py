@@ -26,6 +26,9 @@ celery.conf.update(
     beat_schedule={
         "cleanup-expired": {"task": "countvision_cloud.tasks.cleanup", "schedule": crontab(minute=17)},
         "send-due-reports": {"task": "countvision_cloud.tasks.send_due_reports", "schedule": 300.0},
+        "evaluate-alerts": {"task": "countvision_cloud.tasks.evaluate_alerts", "schedule": 60.0},
+        "deliver-due-webhooks": {"task": "countvision_cloud.tasks.deliver_due_webhooks", "schedule": 60.0},
+        "hourly-webhooks": {"task": "countvision_cloud.tasks.hourly_webhooks", "schedule": 300.0},
         "beat-heartbeat": {"task": "countvision_cloud.tasks.heartbeat", "schedule": 60.0},
     },
 )
