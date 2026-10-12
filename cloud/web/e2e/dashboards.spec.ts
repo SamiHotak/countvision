@@ -5,6 +5,7 @@ import { createOrg, crossings, fakeAgent, linkFromMail, signUp, uniqueEmail } fr
 const CSRF = { "X-CountVision": "1" };
 
 test("sample data: dashboard, periods, CSV + PDF download, report email with PDF", async ({ page, request }) => {
+  test.setTimeout(120_000);
   const email = uniqueEmail("dash");
   await signUp(page, "Dora Dash", email);
   await page.goto(await linkFromMail(request, email, "verify-email")); // reports go to confirmed addresses only
@@ -12,8 +13,9 @@ test("sample data: dashboard, periods, CSV + PDF download, report email with PDF
   await createOrg(page, "Bäckerei Sonne");
 
   // empty organization: the overview offers sample data
+  // (5 weeks of numbers: a few seconds on a small CI machine with TimescaleDB)
   await page.getByRole("button", { name: "Add sample data" }).click();
-  await expect(page.getByRole("heading", { name: "Demo café (sample data)" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Demo café (sample data)" })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("invented sample data")).toBeVisible();
   const total = page.getByTestId("visitors-total");
   await expect(total).not.toHaveText("–");

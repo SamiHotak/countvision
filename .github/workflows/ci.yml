@@ -168,6 +168,8 @@ jobs:
       - name: Logs and report
         if: failure()
         run: |
+          echo "--- slow or failed API requests ---"
+          grep -E "\-> 5[0-9][0-9]|\([0-9]{4,} ms\)|Traceback|Error" /tmp/api.log | tail -n 40 || true
           tail -n 80 /tmp/api.log /tmp/web.log || true
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -249,7 +251,8 @@ jobs:
           print("live stream ok")
           # Phase 4 A: dashboard numbers, PDF (fonts in the image), report email with PDF via Celery -> Mailpit
           dash = call("GET", f"/api/orgs/{org['id']}/sites/{site['id']}/dashboard", cookie=cookie)[0]
-          assert dash["totals"]["in"] == 1 and dash["lines"][0]["line"] == "entrance", dash["totals"]
+          entrance = next(ln for ln in dash["lines"] if ln["line"] == "entrance")  # "door" (saved above) sorts first
+          assert dash["totals"]["in"] == 1 and entrance["in"] == 1, (dash["totals"], dash["lines"])
           req = urllib.request.Request(f"{base}/api/orgs/{org['id']}/sites/{site['id']}/report.pdf", headers={"Cookie": cookie})
           with urllib.request.urlopen(req) as r:
               assert r.read(4) == b"%PDF"

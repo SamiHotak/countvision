@@ -124,7 +124,7 @@ function SitesView({ org }: { org: Org }) {
     <>
       <PageTitle title="Sites">
         {canDelete && sites && !sites.some((x) => x.name === "Demo café (sample data)") ? (
-          <Button variant="secondary" busy={adding} onClick={() => void addSample()}>Add sample data</Button>
+          <Button variant="secondary" busy={adding} onClick={() => void addSample()}>{adding ? "Adding sample data…" : "Add sample data"}</Button>
         ) : null}
         {canEdit ? <Button onClick={() => { setEditing(null); setOpen(true); }}>Add site</Button> : null}
       </PageTitle>

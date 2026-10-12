@@ -136,7 +136,7 @@ function Overview({ org }: { org: Org }) {
           <p className="mr-auto max-w-[56ch] text-muted">
             No camera yet? Look around with a sample café: five weeks of invented numbers, dashboards and a PDF report.
           </p>
-          <Button variant="secondary" onClick={() => void addSample()} busy={busy}>Add sample data</Button>
+          <Button variant="secondary" onClick={() => void addSample()} busy={busy}>{busy ? "Adding sample data…" : "Add sample data"}</Button>
         </Panel>
       ) : null}
 

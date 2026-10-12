@@ -15,12 +15,12 @@ import hashlib
 import logging
 import math
 import random
+import time as time_mod
 import uuid
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select, text
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from ...db import utcnow
@@ -44,16 +44,23 @@ def _hour_weight(hour: int, weekday: int) -> float:
 
 
 def _insert(db: Session, model, rows: list[dict]) -> None:
-    """Fast bulk insert (SQLAlchemy batches the rows into multi-row INSERTs by itself)."""
-    keys = sorted({k for r in rows for k in r})  # every row needs the same columns
-    if rows:
-        db.execute(insert(model), [{k: r.get(k) for k in keys} for r in rows])
+    """Bulk insert with PostgreSQL COPY: ~80,000 rows in about a second, also into TimescaleDB
+    hypertables (multi-row INSERTs took 15+ s on a small CI machine)."""
+    if not rows:
+        return
+    keys = sorted({k for r in rows for k in r})
+    table = model.__table__.name
+    dbapi = db.connection().connection.driver_connection  # psycopg 3, inside the same transaction
+    with dbapi.cursor() as cur, cur.copy(f"COPY {table} ({', '.join(keys)}) FROM STDIN") as copy:
+        for r in rows:
+            copy.write_row([r.get(k) for k in keys])
 
 
 def create(
     db: Session, org: Organization, days: int = 35, seed: int = 7, now: datetime | None = None
 ) -> Site:
     """Create the sample site with ``days`` days of data up to now. Returns the site."""
+    started = time_mod.perf_counter()
     now = now or utcnow()
     tz = "Europe/Berlin"
     zone = ZoneInfo(tz)
@@ -210,6 +217,7 @@ def create(
                             "dwell_s": round(d, 1),
                         }
                     )
+    built = time_mod.perf_counter()
     _insert(db, Coverage, cover)
     _insert(db, LineCount, lines)
     _insert(db, ZoneStat, zones)
@@ -221,7 +229,8 @@ def create(
     for table in ("coverage", "line_counts", "zone_stats", "count_events"):
         db.execute(text(f"ANALYZE {table}"))
     log.info(
-        "Sample site %s: %d minutes, %d line rows, %d events", site.id, len(cover), len(lines), len(events)
+        "Sample site %s: %d minutes, %d line rows, %d events (built %.1f s, stored %.1f s)", site.id,
+        len(cover), len(lines), len(events), built - started, time_mod.perf_counter() - built,
     )
     return site
 
