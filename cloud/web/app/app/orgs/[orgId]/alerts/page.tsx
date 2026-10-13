@@ -39,7 +39,8 @@ function ChannelDialog({ org, members, open, onClose, onSaved }: {
   const [fields, setFields] = React.useState<Record<string, string>>({});
   const [chosen, setChosen] = React.useState<Set<string>>(new Set());
   const [token, setToken] = React.useState("");
-  const [chats, setChats] = React.useState<{ id: number; title: string; type: string; bot: string | null }[] | null>(null);
+  const [chats, setChats] = React.useState<{ id: number; title: string; type: string }[] | null>(null);
+  const [botName, setBotName] = React.useState<string | null>(null);
   const [chat, setChat] = React.useState<string>("");
   const [events, setEvents] = React.useState<Set<string>>(new Set());
 
@@ -54,9 +55,10 @@ function ChannelDialog({ org, members, open, onClose, onSaved }: {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.post<{ chats: { id: number; title: string; type: string; bot: string | null }[] }>(
+      const res = await api.post<{ bot: string | null; chats: { id: number; title: string; type: string }[] }>(
         `/api/orgs/${org.id}/channels/telegram/chats`, { bot_token: token.trim() });
       setChats(res.chats);
+      setBotName(res.bot);
       if (res.chats.length) setChat(String(res.chats[0].id));
     } catch (e) {
       setError(errorText(e));
@@ -130,7 +132,7 @@ function ChannelDialog({ org, members, open, onClose, onSaved }: {
                   </Select>
                 </div>
               ) : (
-                <Notice tone="warn">No chat found. Send a message to {chats[0]?.bot ? `@${chats[0].bot}` : "your bot"} first, then click Find my chat again.</Notice>
+                <Notice tone="warn">No chat found. Send a message to {botName ? `@${botName}` : "your bot"} first, then click Find my chat again.</Notice>
               )
             ) : null}
           </div>

@@ -24,7 +24,7 @@ from ..schemas import (
     OrgOut,
     RoleIn,
 )
-from ..services import invites, orgs
+from ..services import billing, invites, orgs
 
 router = APIRouter(prefix="/api/orgs", tags=["organizations"])
 invite_router = APIRouter(prefix="/api/invites", tags=["invites"])
@@ -32,7 +32,16 @@ invite_router = APIRouter(prefix="/api/invites", tags=["invites"])
 
 def org_out(db: Session, org: Organization, role: Role) -> OrgOut:
     return OrgOut(id=org.id, name=org.name, slug=org.slug, created_at=org.created_at, my_role=role,
-                  member_count=org_repo.count_members(db, org.id))
+                  member_count=org_repo.count_members(db, org.id), billing=billing_brief(db, org.id))
+
+
+def billing_brief(db: Session, org_id) -> dict:
+    ent = billing.entitlement(db, org_id)
+    days_left = None
+    if ent.state == "trial" and ent.trial_ends_at:
+        days_left = max(0, -(-int((ent.trial_ends_at - utcnow()).total_seconds()) // 86400))
+    return {"enabled": ent.state != "off", "state": ent.state, "active": ent.active, "plan": ent.plan.id,
+            "plan_name": ent.plan.name, "trial_days_left": days_left}
 
 
 @router.get("", response_model=list[OrgOut])

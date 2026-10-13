@@ -89,6 +89,7 @@ class MeOut(BaseModel):
     google_linked: bool
     created_at: datetime
     organizations: list[OrgBrief]
+    is_platform_admin: bool = False
 
 
 # --- organizations --------------------------------------------------------------------------
@@ -110,6 +111,8 @@ class OrgOut(BaseModel):
     created_at: datetime
     my_role: Role
     member_count: int
+    # Short plan state for the banner: {state, active, plan, plan_name, trial_days_left, enabled}
+    billing: dict[str, Any] | None = None
 
 
 class MemberOut(BaseModel):
@@ -169,3 +172,23 @@ class AuditOut(BaseModel):
 class OkOut(BaseModel):
     ok: bool = True
     message: str | None = None
+
+
+# --- billing and admin (Phase 4 C) ------------------------------------------------------------
+
+class CheckoutIn(_In):
+    plan: str = Field(min_length=1, max_length=32)
+
+
+class UrlOut(BaseModel):
+    url: str
+
+
+class TrialIn(_In):
+    days: int = Field(ge=1, le=365)
+
+
+class GrantIn(_In):
+    plan: str = Field(min_length=1, max_length=32)
+    until: datetime
+    note: str | None = Field(default=None, max_length=200)

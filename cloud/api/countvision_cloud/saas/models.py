@@ -63,6 +63,9 @@ class User(Base):
     email_verified_at: Mapped[datetime | None]
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    # Operator of the whole service (you): sees the admin page with all organizations.
+    # Set with "countvision-cloud make-admin --email ..."; never through the web.
+    is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     last_login_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(
@@ -204,3 +207,41 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"), index=True)
 
     actor: Mapped[User | None] = relationship()
+
+
+class OrgBilling(Base):
+    """Plan state of one organization (1:1). Stripe is the source of truth for paid plans; this row
+    is a copy that webhooks and "sync" keep up to date, plus the free trial and admin grants."""
+
+    __tablename__ = "org_billing"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    trial_ends_at: Mapped[datetime]
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(64))
+    plan: Mapped[str | None] = mapped_column(String(32))  # plan id of the subscription
+    sub_status: Mapped[str | None] = mapped_column(String(24))  # Stripe status: active, past_due ...
+    current_period_end: Mapped[datetime | None]
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    sub_trial_end: Mapped[datetime | None]  # rest of the free trial carried into Stripe
+    # Free plan granted by the operator (pilot customers, friends): plan id + end date.
+    comp_plan: Mapped[str | None] = mapped_column(String(32))
+    comp_until: Mapped[datetime | None]
+    comp_note: Mapped[str | None] = mapped_column(String(200))
+    synced_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(
+        default=utcnow, onupdate=utcnow, server_default=text("now()"))
+
+
+class StripeEvent(Base):
+    """Every Stripe webhook event once (Stripe may send the same event again)."""
+
+    __tablename__ = "stripe_events"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)  # evt_...
+    type: Mapped[str] = mapped_column(String(80))
+    org_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"))
+    received_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"), index=True)
+    error: Mapped[str | None] = mapped_column(String(300))

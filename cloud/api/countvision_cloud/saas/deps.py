@@ -47,3 +47,17 @@ def org_access(min_role: Role = Role.VIEWER) -> Callable[..., OrgContext]:
         return OrgContext(org=org, membership=membership, user=user)
 
     return dependency
+
+
+_any_member = org_access()
+
+
+def require_plan(ctx: OrgContext = Depends(_any_member), db: Session = Depends(get_db)) -> OrgContext:
+    """Router dependency for product pages: a member of the org AND a working plan (trial, paid,
+    granted, or billing off). Otherwise 402 and the web shows "choose a plan".
+
+    Non-members still get 404 first (org_access runs before the plan check)."""
+    from .services import billing
+
+    billing.require_active(db, ctx.org.id)
+    return ctx

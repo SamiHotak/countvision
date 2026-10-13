@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 
+import { BillingBanner, PlanGate, useOrgBilling } from "@/components/billing";
 import { Wordmark } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/panel";
@@ -75,6 +76,7 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
   const [open, setOpen] = React.useState(false);
   const path = usePathname();
   React.useEffect(() => setOpen(false), [path]);
+  const brief = useOrgBilling(orgId);
 
   async function logout() {
     await api.post("/api/auth/logout").catch(() => undefined);
@@ -95,6 +97,13 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
           <NavLink href={`/app/orgs/${orgId}/video`}>Video analysis</NavLink>
           <NavLink href={`/app/orgs/${orgId}/api`}>API</NavLink>
           <NavLink href={`/app/orgs/${orgId}/members`}>Members</NavLink>
+          {brief?.enabled ? (
+            <NavLink href={`/app/orgs/${orgId}/billing`}>
+              <span className="mr-auto">Billing</span>
+              {brief.state === "trial" ? <span className="text-xs text-muted">{brief.trial_days_left}d trial</span> : null}
+              {!brief.active || brief.state === "past_due" ? <span className="size-2 rounded-full bg-danger" aria-label="needs attention" /> : null}
+            </NavLink>
+          ) : null}
           <NavLink href={`/app/orgs/${orgId}/settings`}>Settings</NavLink>
         </>
       ) : null}
@@ -103,6 +112,7 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
 
   const footer = (
     <div className="mt-auto space-y-1 border-t border-rule pt-4">
+      {me.is_platform_admin ? <NavLink href="/app/admin">Admin</NavLink> : null}
       <NavLink href="/app/account">
         <span className="min-w-0 truncate">{me.name}</span>
       </NavLink>
@@ -144,9 +154,10 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
 
       {/* The camera editor is a drawing tool: it gets more width than the other pages. */}
       <main className={cn("mx-auto w-full px-4 py-6 sm:px-8 sm:py-9",
-        path.includes("/cameras/") || /\/video\/[^/]+/.test(path) ? "max-w-[1440px]" : /\/sites\/[^/]+/.test(path) ? "max-w-[1200px]" : "max-w-[1040px]")}>
+        path.includes("/cameras/") || /\/video\/[^/]+/.test(path) ? "max-w-[1440px]" : /\/sites\/[^/]+/.test(path) || path.startsWith("/app/admin") ? "max-w-[1200px]" : "max-w-[1040px]")}>
         {!me.email_verified ? <VerifyBanner /> : null}
-        {children}
+        {orgId ? <BillingBanner orgId={orgId} brief={brief} /> : null}
+        <PlanGate orgId={orgId} brief={brief}>{children}</PlanGate>
       </main>
     </div>
   );

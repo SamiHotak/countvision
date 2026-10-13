@@ -1,4 +1,5 @@
-"""Command line: countvision-cloud migrate | wait | cleanup | serve | sample-data | send-reports.
+"""Command line: countvision-cloud migrate | wait | cleanup | serve | sample-data | send-reports |
+make-admin | stripe-setup.
 
 Docker runs "countvision-cloud wait && countvision-cloud migrate" before the API starts.
 """
@@ -85,6 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     sd.add_argument("--org", required=True, help="organization id or slug")
     sd.add_argument("--days", type=int, default=35)
     sub.add_parser("send-reports", help="send the report emails that are due now")
+    ma = sub.add_parser("make-admin", help="give a user the operator's admin page (all organizations)")
+    ma.add_argument("--email", required=True)
+    ma.add_argument("--remove", action="store_true", help="take the admin page away again")
+    sub.add_parser("stripe-setup", help="create the CountVision products, prices and portal in Stripe")
     args = parser.parse_args(argv)
     setup_logging(get_settings().log_level)
 
@@ -122,6 +127,32 @@ def main(argv: list[str] | None = None) -> int:
         from .tasks import send_due_reports
 
         print(send_due_reports())
+    elif args.cmd == "make-admin":
+        from sqlalchemy import func, select
+
+        from .db import db_session
+        from .saas.models import User
+        from .saas.services import audit
+
+        with db_session() as db:
+            user = db.scalar(select(User).where(func.lower(User.email) == args.email.strip().lower()))
+            if user is None:
+                raise SystemExit(f"No account with the email {args.email}. Sign up in the web app first.")
+            user.is_platform_admin = not args.remove
+            audit.record(db, "admin.removed" if args.remove else "admin.added", actor=None,
+                         target_type="user", target_id=user.id, email=user.email)
+            state = "OFF" if args.remove else "ON"
+            print(f"{user.email}: admin page {state} (reload the page in the browser)")
+    elif args.cmd == "stripe-setup":
+        from .saas.services import billing
+
+        settings = get_settings()
+        if not settings.billing_enabled:
+            raise SystemExit("CV_STRIPE_SECRET_KEY is not set. Put your sk_test_... key into cloud/.env.")
+        print(f"Stripe {'TEST' if settings.stripe_test_mode else 'LIVE'} mode, {settings.stripe_api_url}")
+        for line in billing.setup_stripe():
+            print(" -", line)
+        print("Done. Safe to run again after changing prices in saas/plans.py.")
     elif args.cmd == "serve":
         import uvicorn
 

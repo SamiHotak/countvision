@@ -17,7 +17,7 @@ from .logging_setup import setup_logging
 from .product.routers import dashboards, device_api, integrations, live_api, manage, video
 from .product.routers.public_api import public_app
 from .saas.errors import install_error_handlers
-from .saas.routers import auth, dev, health, me, orgs
+from .saas.routers import admin, auth, billing, dev, dev_stripe, health, me, orgs
 from .settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -44,7 +44,9 @@ def create_app() -> FastAPI:
         # The device API (/api/device/*) uses a Bearer token, not cookies, so it needs no CSRF header.
         path = request.url.path
         # The test fakes (/api/dev/telegram, /api/dev/webhook-sink) are called by our own server.
-        exempt = path.startswith(("/api/device/", "/api/dev/telegram/", "/api/dev/webhook-sink"))
+        # Stripe signs its webhooks; the fake Stripe pages post plain HTML forms.
+        exempt = path.startswith(("/api/device/", "/api/dev/telegram/", "/api/dev/webhook-sink",
+                                  "/api/billing/stripe-webhook", "/api/dev/stripe/"))
         if request.method in UNSAFE and path.startswith("/api/") and not exempt \
                 and request.headers.get(CSRF_HEADER) != "1":
             return JSONResponse({"error": {"code": "csrf", "message": "Missing X-CountVision header."}},
@@ -59,16 +61,20 @@ def create_app() -> FastAPI:
             log.info("%s %s -> %s (%.0f ms)", request.method, request.url.path, response.status_code, ms)
         return response
 
-    for router in (health.router, auth.router, me.router, orgs.router, orgs.invite_router, manage.router,
+    for router in (health.router, auth.router, me.router, orgs.router, orgs.invite_router, billing.router,
+                   billing.webhook_router, admin.router, manage.router,
                    dashboards.router, integrations.router, video.router, device_api.router, live_api.router):
         app.include_router(router)
     app.mount("/api/v1", public_app)  # public API with its own docs at /api/v1/docs
     if settings.environment != "production" and settings.email_backend == "memory":
         app.include_router(dev.router)
+        app.include_router(dev_stripe.router)
         log.warning("Dev outbox enabled at /api/dev/outbox (memory email backend)")
-    log.info("CountVision API %s (%s), web %s, email %s/%s, google %s", __version__, settings.environment,
-             settings.web_url, settings.email_backend, settings.email_delivery,
-             "on" if settings.google_enabled else "off")
+    log.info("CountVision API %s (%s), web %s, email %s/%s, google %s, billing %s", __version__,
+             settings.environment, settings.web_url, settings.email_backend, settings.email_delivery,
+             "on" if settings.google_enabled else "off",
+             ("on (Stripe TEST mode)" if settings.stripe_test_mode else "on (Stripe LIVE)")
+             if settings.billing_enabled else "off")
     return app
 
 

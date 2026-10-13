@@ -154,6 +154,10 @@ jobs:
           CV_VIDEO_RUNNER: thread
           CV_VIDEO_DETECTOR: blobs
           CV_DATA_DIR: /tmp/cvdata
+          # billing ON against the FAKE Stripe inside the API (never the real Stripe in CI)
+          CV_STRIPE_SECRET_KEY: sk_test_fake
+          CV_STRIPE_WEBHOOK_SECRET: whsec_fake
+          CV_STRIPE_API_URL: http://127.0.0.1:8001/api/dev/stripe
         run: |
           countvision-edge demo --out /tmp/demo --no-video
           countvision-cloud migrate

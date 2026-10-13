@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from ...db import get_db, utcnow
-from ...saas.deps import OrgContext, org_access
+from ...saas.deps import OrgContext, org_access, require_plan
 from ...saas.errors import NotFound
 from ...saas.models import Role
 from ...saas.schemas import OkOut
@@ -135,7 +135,7 @@ def get_device(device_id: uuid.UUID, ctx: OrgContext = Depends(org_access()),
                   reconnects=c.reconnects, alert=c.alert, lines=c.lines or [], zones=c.zones or [],
                   last_seen_at=c.last_seen_at, today=today.get(c.id, {}),
                   desired_version=c.desired_version, applied_version=c.applied_version,
-                  config_error=c.config_error)
+                  config_error=c.config_error, plan_paused=c.plan_paused)
         for c in d.cameras
     ]
     return DeviceDetailOut(**_device_out(d), cameras=cams, site_timezone=d.site.timezone,
@@ -184,7 +184,8 @@ def get_camera(camera_id: uuid.UUID, ctx: OrgContext = Depends(org_access()),
     return camera_config.camera_detail(db, camera_config.get_camera(db, ctx.org, camera_id))
 
 
-@router.put("/cameras/{camera_id}/config", response_model=CameraDetailOut)
+@router.put("/cameras/{camera_id}/config", response_model=CameraDetailOut,
+            dependencies=[Depends(require_plan)])
 def save_camera_config(camera_id: uuid.UUID, body: CameraConfigDoc,
                        ctx: OrgContext = Depends(org_access(Role.MEMBER)),
                        db: Session = Depends(get_db)) -> CameraDetailOut:
@@ -196,7 +197,8 @@ def save_camera_config(camera_id: uuid.UUID, body: CameraConfigDoc,
     return camera_config.camera_detail(db, camera_config.get_camera(db, ctx.org, camera_id))
 
 
-@router.post("/cameras/{camera_id}/snapshot", response_model=SnapshotOut, status_code=202)
+@router.post("/cameras/{camera_id}/snapshot", response_model=SnapshotOut, status_code=202,
+             dependencies=[Depends(require_plan)])
 def take_snapshot(camera_id: uuid.UUID, ctx: OrgContext = Depends(org_access(Role.MEMBER)),
                   db: Session = Depends(get_db)) -> SnapshotOut:
     """Ask the device for ONE pixelated picture (kept 10 minutes in memory, for drawing lines)."""

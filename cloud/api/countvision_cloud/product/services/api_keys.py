@@ -95,4 +95,7 @@ def org_from_key(db: Session, request: Request) -> tuple[Organization, ApiKey]:
         row.last_used_at = now  # written at most once a minute
         db.commit()
     org = db.get(Organization, row.org_id)
+    from ...saas.services import billing
+
+    billing.require_active(db, row.org_id)  # 402 when the trial ended and no plan was chosen
     return org, row

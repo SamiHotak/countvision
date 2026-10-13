@@ -10,6 +10,7 @@ export function deviceHealth(d: Device): { health: Health; label: string } {
 
 export function cameraHealth(c: Camera, deviceOnline: boolean): { health: Health; label: string } {
   if (!deviceOnline) return { health: "idle", label: "Device offline" };
+  if (c.plan_paused) return { health: "warn", label: "Not counted: over your plan's camera limit" };
   if (c.alert) return { health: "down", label: c.alert };
   switch (c.state) {
     case "running":

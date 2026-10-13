@@ -15,14 +15,15 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from ...db import get_db, session_factory
-from ...saas.deps import OrgContext, org_access
+from ...saas.deps import OrgContext, org_access, require_plan
 from ...saas.errors import AppError
 from ...saas.models import Role
 from ...saas.schemas import OkOut
 from ..schemas import VideoConfigIn, VideoJobIn
 from ..services import video_jobs
 
-router = APIRouter(prefix="/api/orgs/{org_id}/video-jobs", tags=["video analysis"])
+router = APIRouter(prefix="/api/orgs/{org_id}/video-jobs", tags=["video analysis"],
+                   dependencies=[Depends(require_plan)])  # 402 without a working plan
 
 
 @router.get("")

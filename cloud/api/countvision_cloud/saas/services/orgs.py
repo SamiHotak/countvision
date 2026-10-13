@@ -43,6 +43,9 @@ def create_org(db: Session, user: User, name: str) -> Organization:
         raise AppError(f"You can be in at most {MAX_ORGS_PER_USER} organizations.", code="limit")
     org = repo.add_org(db, name=name, slug=unique_slug(db, name), created_by=user.id)
     repo.add_membership(db, org.id, user.id, Role.OWNER)
+    from . import billing
+
+    billing.start_trial(db, org)
     audit.record(db, "org.created", actor=user.id, org_id=org.id, target_type="org", target_id=org.id,
                  name=org.name)
     return org

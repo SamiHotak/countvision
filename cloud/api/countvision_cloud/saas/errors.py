@@ -43,6 +43,13 @@ class NotFound(AppError):
     code = "not_found"
 
 
+class PaymentRequired(AppError):
+    """The plan does not allow this (trial ended, or a plan limit reached)."""
+
+    status = 402
+    code = "subscription_required"
+
+
 class Conflict(AppError):
     status = 409
     code = "conflict"

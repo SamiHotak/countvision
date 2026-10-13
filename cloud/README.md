@@ -102,6 +102,96 @@ connection while waiting), `POST /api/device/snapshots/<request>` (JPEG body or 
 Org API added: `GET /cameras/<id>`, `PUT /cameras/<id>/config`, `POST /cameras/<id>/snapshot`,
 `GET /cameras/<id>/snapshot/<request>` (+ `/image`).
 
+## Billing with Stripe (Phase 4 Session C)
+
+**Off by default.** Without a Stripe key there are no plans and no limits (good for development and
+self-hosting). With a key, every organization gets a **14-day free trial** (2 cameras, no card),
+then a paid plan:
+
+| Plan | Price (per month, plus VAT) | Cameras | Video analysis |
+|---|---|---|---|
+| Starter | 39 EUR | 1 | 60 min / month |
+| Shop | 119 EUR | 4 | 300 min / month |
+| Business | 299 EUR | 12 | 1200 min / month |
+
+Prices and limits live in one file: `api/countvision_cloud/saas/plans.py`.
+
+What the limits do:
+- **Cameras.** A new device can only be paired while the plan has a free slot. If a device reports more
+  cameras than the plan allows, the OLDEST cameras keep counting and the newest are **paused** (shown on
+  the device page; their numbers are not stored). Upgrading un-pauses them at the next upload.
+- **Video analysis.** Minutes count in the month the analysis starts.
+- **Trial over, no plan.** Product pages and the public API answer "choose a plan" (HTTP 402). Billing,
+  Members and Settings still work. Devices keep uploading, so **no data is lost**. Alerts, report
+  emails and webhooks pause.
+- **Payment failed** ("past due"): everything keeps working while Stripe retries; a red banner asks for
+  a new card.
+
+**TEST MODE ONLY.** The server refuses a live key (`sk_live_...`) unless `CV_STRIPE_ALLOW_LIVE=true`.
+Test mode costs 0 EUR and moves no money.
+
+### Set it up on Windows (about 15 minutes, 0 EUR)
+
+1. **Stripe account (free).** Sign up at https://dashboard.stripe.com/register. You do NOT need to
+   activate payments for test mode. Make sure the switch **Test mode** (top right) is ON.
+2. **Business name.** Checkout refuses to start without one: open https://dashboard.stripe.com/settings/account
+   and enter a name (e.g. "CountVision Test"). Save.
+3. **Secret key.** https://dashboard.stripe.com/test/apikeys -> "Secret key" -> Reveal -> copy. It starts
+   with `sk_test_`.
+4. **Stripe CLI** (brings webhooks from Stripe to your laptop):
+   - Open https://github.com/stripe/stripe-cli/releases/latest and download
+     `stripe_<version>_windows_x86_64.zip`.
+   - Unpack it into `C:\Users\hotak\stripe` (so the file `C:\Users\hotak\stripe\stripe.exe` exists).
+   - Check in PowerShell: `C:\Users\hotak\stripe\stripe.exe --version` prints a version.
+   - Log in: `C:\Users\hotak\stripe\stripe.exe login`, press Enter, allow it in the browser.
+5. **Start forwarding** (in a NEW PowerShell window, keep it open while you test):
+   ```
+   C:\Users\hotak\stripe\stripe.exe listen --forward-to localhost:8001/api/billing/stripe-webhook
+   ```
+   It prints `Your webhook signing secret is whsec_...`. Copy that value.
+6. **Tell the cloud.** In `cloud\.env` (create it from `.env.example` if missing) add two lines:
+   ```
+   CV_STRIPE_SECRET_KEY=sk_test_...your key...
+   CV_STRIPE_WEBHOOK_SECRET=whsec_...from step 5...
+   ```
+   Then, in the `cloud` folder: `docker compose up -d` (the api, worker and beat restart with the keys).
+   Check: `docker compose logs api | findstr billing` shows `billing on (Stripe TEST mode)`.
+7. **Create the plans in Stripe** (once; safe to repeat):
+   ```
+   docker compose exec api countvision-cloud stripe-setup
+   ```
+   It prints three prices and "Customer portal: created settings ...".
+8. **Your admin page:** `docker compose exec api countvision-cloud make-admin --email you@example.com`
+   (the email you sign in with). Reload the browser: "Admin" appears at the bottom of the menu.
+
+Pay in test mode with card **4242 4242 4242 4242**, any future date, any CVC. A card that fails:
+`4000 0000 0000 0341` (it can be added, but the payment fails later).
+
+The `stripe listen` window shows each event with `[200]` when the cloud accepted it. If you forget to
+run it, the Billing page still updates after you return from Stripe (it asks Stripe directly).
+
+### What runs where
+- `saas/services/billing.py`: trial, plan state, limits, Checkout, portal, webhook handling, admin grants.
+  The webhook re-reads the subscription from Stripe for every event, so repeated or out-of-order events
+  cannot leave a wrong state; each event id is stored once (`stripe_events`).
+- `saas/services/stripe_api.py`: a small Stripe REST client (httpx) and the signature check.
+- `product/services/plan_limits.py`: what counts as a camera / video minute, pausing cameras.
+- `saas/routers/dev_stripe.py`: a FAKE Stripe for tests and offline demos (dev only). To click through
+  billing without any Stripe account, run the API with `CV_EMAIL_BACKEND=memory`,
+  `CV_STRIPE_SECRET_KEY=sk_test_fake`, `CV_STRIPE_WEBHOOK_SECRET=whsec_fake`,
+  `CV_STRIPE_API_URL=http://127.0.0.1:8001/api/dev/stripe` (this is what the browser tests do).
+- Admin page `/app/admin` (platform admins only, others get "not found"): all organizations with plan,
+  cameras, devices, newest data; grant a plan for free until a date (pilots), extend a trial,
+  re-read from Stripe; the activity log of all organizations. Customers see these actions in their own
+  activity log ("CountVision granted the Shop plan ...").
+
+### Before going live (NOT done yet, decide later)
+- German VAT: switch on Stripe Tax (costs a fee per transaction) or set tax rates by hand; check
+  invoices with a tax advisor (Kleinunternehmer or not changes the invoice text).
+- Impressum, terms (AGB) and the AVV must be linked from Checkout (Stripe settings: Public details).
+- A webhook endpoint in the Stripe dashboard for the real domain (instead of `stripe listen`).
+- `CV_STRIPE_ALLOW_LIVE=true` and the live key. Real money from that moment.
+
 ## Alerts, API, webhooks, video analysis (Phase 4 Session B)
 
 **Alerts** page (`/app/orgs/<org>/alerts`):

@@ -70,3 +70,36 @@ def run_alerts() -> dict:
 
     with db_session() as db:
         return alerts.evaluate_all(db)
+
+
+# --- billing helpers for browser tests (Phase 4 C) -------------------------------------------------
+
+@router.post("/make-admin")
+def make_admin(body: dict) -> dict:
+    """Like 'countvision-cloud make-admin --email ...' (browser tests cannot run the CLI)."""
+    from sqlalchemy import func, select
+
+    from ...db import db_session
+    from ..models import User
+
+    with db_session() as db:
+        user = db.scalar(select(User).where(func.lower(User.email) == str(body.get("email", "")).lower()))
+        if user is None:
+            return {"ok": False}
+        user.is_platform_admin = True
+        return {"ok": True}
+
+
+@router.post("/billing/end-trial")
+def end_trial(body: dict) -> dict:
+    """Let an organization's free trial end now (to see the 'choose a plan' screens)."""
+    import uuid
+    from datetime import timedelta
+
+    from ...db import db_session, utcnow
+    from ..services import billing
+
+    with db_session() as db:
+        row = billing.billing_row(db, uuid.UUID(str(body["org_id"])))
+        row.trial_ends_at = utcnow() - timedelta(minutes=1)
+    return {"ok": True}

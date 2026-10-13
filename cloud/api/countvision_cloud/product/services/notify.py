@@ -193,8 +193,11 @@ def telegram_call(token: str, method: str, payload: dict[str, Any] | None = None
     return body.get("result")
 
 
-def telegram_chats(token: str) -> list[dict[str, Any]]:
-    """Chats that wrote to the bot recently (to choose where alerts go)."""
+def telegram_chats(token: str) -> dict[str, Any]:
+    """The bot's @name and the chats that wrote to it recently (to choose where alerts go).
+
+    The bot name is returned on its own, so the page can say "send a message to @name" even when
+    no chat was found yet."""
     me = telegram_call(token, "getMe")
     updates = telegram_call(
         token, "getUpdates", {"limit": 100, "allowed_updates": ["message", "my_chat_member"]}
@@ -211,7 +214,8 @@ def telegram_chats(token: str) -> list[dict[str, Any]]:
                 or str(chat["id"])
             )
             chats[chat["id"]] = {"id": chat["id"], "title": title, "type": chat.get("type", "private")}
-    return [{"bot": me.get("username") if isinstance(me, dict) else None, **c} for c in chats.values()]
+    bot = me.get("username") if isinstance(me, dict) else None
+    return {"bot": bot, "chats": list(chats.values())}
 
 
 def telegram_send(channel: NotificationChannel, text: str) -> None:

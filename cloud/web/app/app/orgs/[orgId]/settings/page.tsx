@@ -33,6 +33,14 @@ function describe(e: AuditEntry): string {
     case "device.revoked": return `removed the device "${m.name}"`;
     case "device.deleted": return `deleted the device "${m.name}" and its data`;
     case "camera.renamed": return `renamed a camera from "${m.old}" to "${m.new}"`;
+    case "billing.checkout_started": return `opened the payment page for the ${m.plan} plan`;
+    case "billing.portal_opened": return "opened Manage billing";
+    case "billing.subscription_changed": return `plan changed: ${m.new_plan ?? "none"} (${m.new_status ?? "-"})`;
+    case "admin.plan_granted": return `CountVision granted the ${m.plan} plan until ${String(m.until ?? "").slice(0, 10)}`;
+    case "admin.grant_removed": return "CountVision removed the granted plan";
+    case "admin.trial_extended": return `CountVision extended the free trial by ${m.days} days`;
+    case "camera.plan_paused": return `camera "${m.name}" paused: the plan allows ${m.limit} cameras`;
+    case "camera.plan_resumed": return `camera "${m.name}" counts again`;
     default: return e.action;
   }
 }

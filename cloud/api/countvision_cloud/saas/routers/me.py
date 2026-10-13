@@ -22,6 +22,7 @@ def me_out(db: Session, user: User) -> MeOut:
         created_at=user.created_at,
         organizations=[OrgBrief(id=o.id, name=o.name, slug=o.slug, role=Role(r))
                        for o, r in orgs.my_orgs(db, user)],
+        is_platform_admin=user.is_platform_admin,
     )
 
 

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ...db import utcnow
 from ...redis_client import get_redis
+from ...saas.services import billing
 from ..models import Camera, Device, NotificationChannel, Site
 from . import analytics, notify
 
@@ -38,8 +39,8 @@ def queue_crossings(db: Session, device: Device, cams_by_id: dict, crossings: li
     if not crossings:
         return 0
     hooks = subscribers(db, device.org_id, "crossing")
-    if not hooks:
-        return 0
+    if not hooks or not billing.entitlement(db, device.org_id).active:
+        return 0  # no working plan: webhooks pause
     site = db.get(Site, device.site_id)
     items = [
         {
@@ -122,13 +123,15 @@ def send_hourly(db: Session, now: datetime | None = None) -> int:
     now = now or utcnow()
     r = get_redis()
     sent = 0
-    hooks = list(
-        db.scalars(
+    inactive = billing.inactive_org_ids(db)
+    hooks = [
+        h for h in db.scalars(
             select(NotificationChannel).where(
                 NotificationChannel.kind == "webhook", NotificationChannel.enabled.is_(True)
             )
         )
-    )
+        if h.org_id not in inactive
+    ]
     for ch in hooks:
         if "counts.hourly" not in (ch.config or {}).get("events", []):
             continue

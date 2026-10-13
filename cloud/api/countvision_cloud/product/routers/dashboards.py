@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from ...db import get_db, utcnow
-from ...saas.deps import OrgContext, org_access
+from ...saas.deps import OrgContext, org_access, require_plan
 from ...saas.errors import AppError
 from ...saas.models import Role
 from ...saas.schemas import OkOut
@@ -32,7 +32,8 @@ from ..schemas import (
 )
 from ..services import analytics, exports, reports, sample_data, sites
 
-router = APIRouter(prefix="/api/orgs/{org_id}", tags=["dashboards and reports"])
+router = APIRouter(prefix="/api/orgs/{org_id}", tags=["dashboards and reports"],
+                   dependencies=[Depends(require_plan)])  # 402 without a working plan
 
 
 def _period(site, first: date | None, last: date | None) -> analytics.Period:

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "countvision-cloud"
-version = "0.3.0"
-description = "CountVision cloud API: accounts, organizations, devices, dashboards, reports, alerts, public API, video analysis."
+version = "0.4.0"
+description = "CountVision cloud API: accounts, organizations, devices, dashboards, reports, alerts, public API, video analysis, billing."
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 # Licences: FastAPI/Starlette/pydantic/SQLAlchemy/Alembic/uvicorn/httpx/redis-py/email-validator = MIT or BSD,

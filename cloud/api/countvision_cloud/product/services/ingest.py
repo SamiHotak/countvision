@@ -26,7 +26,7 @@ from ...saas.errors import AppError
 from .. import live
 from ..models import Camera, CountEvent, Coverage, Device, IngestBatch, LineCount, ZoneStat
 from ..schemas import IngestIn, IngestOut
-from . import camera_config, webhook_events
+from . import camera_config, plan_limits, webhook_events
 
 log = logging.getLogger(__name__)
 
@@ -126,12 +126,18 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
     now_dt = utcnow()
     now = now_dt.timestamp()
     cams = _cameras(db, device, payload)
+    plan_limits.refresh_paused(db, device.org_id)
+    paused = {edge_id for edge_id, c in cams.items() if c.plan_paused}
     rejected = 0
+    skipped = 0
     accepted: dict[str, int] = {}
     newest: float | None = None
 
-    def keep(value: float) -> bool:
-        nonlocal rejected, newest
+    def keep(value: float, edge_id: str = "") -> bool:
+        nonlocal rejected, newest, skipped
+        if edge_id in paused:  # over the plan's camera limit: not stored (see plan_limits.py)
+            skipped += 1
+            return False
         if _ok_time(value, now):
             newest = value if newest is None else max(newest, value)
             return True
@@ -142,7 +148,7 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
     rows = [
         {"camera_id": cams[r.camera_id].id, "window_start": _ts(r.window_start), "line": r.line,
          "class_name": r.class_name, "in_count": r.in_count, "out_count": r.out_count, "received_at": now_dt}
-        for r in payload.line_counts if keep(r.window_start + 60)
+        for r in payload.line_counts if keep(r.window_start + 60, r.camera_id)
     ]
     accepted["line_counts"] = _upsert(db, LineCount, rows,
                                       ("camera_id", "line", "class_name", "window_start"),
@@ -153,7 +159,7 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
     rows = [
         {"camera_id": cams[r.camera_id].id, "window_start": _ts(r.window_start), "zone": r.zone,
          "class_name": r.class_name, "received_at": now_dt, **{f: getattr(r, f) for f in zone_fields}}
-        for r in payload.zone_stats if keep(r.window_start + 60)
+        for r in payload.zone_stats if keep(r.window_start + 60, r.camera_id)
     ]
     accepted["zone_stats"] = _upsert(db, ZoneStat, rows, ("camera_id", "zone", "class_name", "window_start"),
                                      (*zone_fields, "received_at"))
@@ -161,7 +167,7 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
     rows = [
         {"camera_id": cams[r.camera_id].id, "window_start": _ts(r.window_start), "frames": r.frames,
          "seconds": r.seconds}
-        for r in payload.coverage if keep(r.window_start + 60)
+        for r in payload.coverage if keep(r.window_start + 60, r.camera_id)
     ]
     accepted["coverage"] = _upsert(db, Coverage, rows, ("camera_id", "window_start"), ("frames", "seconds"))
 
@@ -170,7 +176,7 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
         {"camera_id": cams[r.camera_id].id, "ts": _ts(r.ts), "event_id": r.event_id, "kind": r.kind,
          "name": r.name, "class_name": r.class_name or None, "direction": r.direction,
          "dwell_s": r.dwell_s, "speed_kmh": r.speed_kmh}
-        for r in payload.events if keep(r.ts)
+        for r in payload.events if keep(r.ts, r.camera_id)
     ]
     new_events = _insert_events(db, rows)
     accepted["events"] = len(rows)
@@ -233,6 +239,9 @@ def ingest(db: Session, device: Device, payload: IngestIn) -> IngestOut:
         .on_conflict_do_nothing(index_elements=["device_id", "batch_id"]).returning(IngestBatch.id)
     )
     duplicate = result.first() is None
+    if skipped:
+        log.info("Device %s batch %s: %d rows of paused cameras (plan limit) not stored", device.id,
+                 payload.batch_id, skipped)
     if rejected:
         log.warning("Device %s batch %s: %d rows with impossible times rejected", device.id,
                     payload.batch_id, rejected)

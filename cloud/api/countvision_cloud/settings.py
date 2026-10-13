@@ -84,6 +84,15 @@ class Settings(BaseSettings):
     # "Add sample data" button (a Demo café with 5 weeks of invented numbers, clearly labelled)
     sample_data_enabled: bool = True
 
+    # Billing with Stripe (Phase 4 C). OFF when no secret key is set: then every organization
+    # has no limits (self-hosted / development). TEST MODE ONLY until you decide to go live:
+    # a live key (sk_live_...) is refused unless CV_STRIPE_ALLOW_LIVE=true.
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None  # whsec_... from "stripe listen" or the Stripe dashboard
+    stripe_api_url: str = "https://api.stripe.com"  # tests point this at a fake Stripe
+    stripe_allow_live: bool = False
+    trial_days: int = Field(default=14, ge=0, le=90)
+
     # Google login: off when the client id is empty
     google_client_id: str | None = None
     google_client_secret: str | None = None
@@ -100,6 +109,12 @@ class Settings(BaseSettings):
                 raise ValueError("CV_SECRET_KEY must be set to a long random value in production")
             if not self.web_url.startswith("https://"):
                 raise ValueError("CV_WEB_URL must be https in production")
+        key = self.stripe_secret_key or ""
+        if key and not key.startswith(("sk_test_", "rk_test_")) and not self.stripe_allow_live:
+            raise ValueError(
+                "CV_STRIPE_SECRET_KEY is not a TEST key (sk_test_...). Live keys charge real money; "
+                "set CV_STRIPE_ALLOW_LIVE=true only when you really go live."
+            )
         return self
 
     @property
@@ -114,6 +129,15 @@ class Settings(BaseSettings):
         if self.webhook_allow_private is not None:
             return self.webhook_allow_private
         return self.environment != "production"
+
+    @property
+    def billing_enabled(self) -> bool:
+        """Plans, limits and the trial apply only when Stripe is set up."""
+        return bool(self.stripe_secret_key)
+
+    @property
+    def stripe_test_mode(self) -> bool:
+        return (self.stripe_secret_key or "").startswith(("sk_test_", "rk_test_"))
 
     @property
     def google_enabled(self) -> bool:

@@ -99,8 +99,9 @@ def test_channels_email_telegram_webhook_and_tests(app, client, client2, telegra
     # telegram: find the chat with the token, then save; a wrong token gives Telegram's reason
     wrong = client.post(f"{base}/telegram/chats", json={"bot_token": "000:wrong-token-wrong-token"})
     assert wrong.status_code == 422 and "Unauthorized" in wrong.json()["error"]["message"]
-    chats = client.post(f"{base}/telegram/chats", json={"bot_token": GOOD_TOKEN}).json()["chats"]
-    assert {c["title"] for c in chats} == {"Ezat", "Shop team"} and chats[0]["bot"] == "cv_test_bot"
+    found = client.post(f"{base}/telegram/chats", json={"bot_token": GOOD_TOKEN}).json()
+    chats = found["chats"]
+    assert {c["title"] for c in chats} == {"Ezat", "Shop team"} and found["bot"] == "cv_test_bot"
     tg = channel(client, org, kind="telegram", name="My phone", bot_token=GOOD_TOKEN, chat_id=4242, chat_title="Ezat")
     assert tg["chat_title"] == "Ezat" and tg["secret_ok"] is True and "bot_token" not in tg
     assert client.post(f"{base}/{tg['id']}/test").status_code == 200

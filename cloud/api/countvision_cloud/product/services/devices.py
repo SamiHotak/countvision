@@ -64,6 +64,9 @@ def create_pairing_code(db: Session, org: Organization, actor: User, site: Site,
         select(func.count(Device.id)).where(Device.org_id == org.id, Device.revoked_at.is_(None))) or 0
     if devices >= MAX_DEVICES:
         raise Conflict(f"At most {MAX_DEVICES} devices per organization.", code="limit")
+    from . import plan_limits
+
+    plan_limits.check_can_pair(db, org.id)  # 402 when the plan has no room for another camera
     raw = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
     row = PairingCode(org_id=org.id, site_id=site.id, device_name=device_name,
                       code_hash=security.token_hash(raw), created_by=actor.id,

@@ -104,3 +104,9 @@
 @media (prefers-reduced-motion: reduce) {
   .cv-pulse, .cv-tick { animation: none; }
 }
+
+/* Billing: a camera slot over the plan's limit (paused) */
+.cv-slot-over {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--color-danger) 55%, transparent) 0 3px,
+    transparent 3px 6px);
+}

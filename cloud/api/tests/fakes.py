@@ -92,3 +92,66 @@ class WebhookReceiver(_Server):
 
     def of_type(self, event_type: str) -> list[dict]:
         return [r for r in self.requests if r["json"]["type"] == event_type]
+
+
+class FakeStripe:
+    """The fake Stripe of saas/routers/dev_stripe.py, served on its own port (like the real Stripe).
+
+    It cannot reach the TestClient app, so tests replay its stored, signed events themselves
+    (``deliver_to(client)``)."""
+
+    def __init__(self) -> None:
+        import socket
+
+        import uvicorn
+        from fastapi import FastAPI
+
+        from countvision_cloud.saas.routers import dev_stripe
+
+        dev_stripe.reset()
+        dev_stripe.DELIVER["on"] = False
+        self.state = dev_stripe.STATE
+        app = FastAPI()
+        app.include_router(dev_stripe.router)
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        self.port = sock.getsockname()[1]
+        sock.close()
+        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning"))
+        self.thread = threading.Thread(target=self.server.run, daemon=True)
+        self.thread.start()
+        import time
+
+        for _ in range(100):
+            if self.server.started:
+                break
+            time.sleep(0.05)
+        self.sent = 0  # events already replayed
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/api/dev/stripe"
+
+    def page_post(self, url: str) -> int:
+        """Press a button on a fake Stripe page (form post); returns the HTTP status."""
+        import httpx
+
+        return httpx.post(url, follow_redirects=False).status_code
+
+    def deliver_to(self, client) -> list[dict]:
+        """Post the new events to the app's webhook like Stripe would. Returns the answers."""
+        out = []
+        for ev in self.state["events"][self.sent:]:
+            resp = client.post("/api/billing/stripe-webhook", content=ev["body"],
+                               headers={"Stripe-Signature": ev["signature"], "Content-Type": "application/json"})
+            assert resp.status_code == 200, resp.text
+            out.append(resp.json())
+        self.sent = len(self.state["events"])
+        return out
+
+    def close(self) -> None:
+        from countvision_cloud.saas.routers import dev_stripe
+
+        self.server.should_exit = True
+        self.thread.join(timeout=5)
+        dev_stripe.DELIVER["on"] = True

@@ -15,14 +15,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...db import get_db, utcnow
-from ...saas.deps import OrgContext, org_access
+from ...saas.deps import OrgContext, org_access, require_plan
 from ...saas.models import Membership, Role, User
 from ...saas.schemas import OkOut
 from ..models import AlertRule, WebhookDelivery
 from ..schemas import AlertRuleIn, AlertRulePatch, ApiKeyIn, ChannelIn, ChannelPatch, TelegramChatsIn
 from ..services import alerts, api_keys, channels, notify, sites
 
-router = APIRouter(prefix="/api/orgs/{org_id}", tags=["alerts and integrations"])
+router = APIRouter(prefix="/api/orgs/{org_id}", tags=["alerts and integrations"],
+                   dependencies=[Depends(require_plan)])  # 402 without a working plan
 
 
 def _members(db: Session, org_id: uuid.UUID) -> dict[str, User]:
@@ -96,8 +97,7 @@ def telegram_chats(
     body: TelegramChatsIn, ctx: OrgContext = Depends(org_access(Role.MEMBER))
 ) -> dict[str, Any]:
     """Chats that recently wrote to the bot: the person sends any message to the bot, then picks it."""
-    chats = notify.telegram_chats(body.bot_token.strip())
-    return {"chats": chats}
+    return notify.telegram_chats(body.bot_token.strip())
 
 
 @router.get("/webhook-deliveries")

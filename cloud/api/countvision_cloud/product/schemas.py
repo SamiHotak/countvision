@@ -125,6 +125,7 @@ class CameraOut(BaseModel):
     desired_version: int = 0  # config version saved in the cloud editor
     applied_version: int = 0  # config version the device runs
     config_error: str | None = None
+    plan_paused: bool = False  # over the plan's camera limit: numbers are not stored
 
 
 class DeviceOut(BaseModel):

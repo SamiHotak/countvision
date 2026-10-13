@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from ...db import utcnow
 from ...saas.errors import AppError, NotFound
 from ...saas.models import Membership, Organization, User
-from ...saas.services import audit, email, ratelimit
+from ...saas.services import audit, billing, email, ratelimit
 from ...settings import get_settings
 from ..models import ReportSchedule, Site
 from ..reports import pdf
@@ -357,7 +357,9 @@ def send_due(db: Session, now: datetime | None = None) -> dict[str, int]:
     """Called by Celery beat: send every report that is due. Each schedule in its own transaction."""
     now = now or utcnow()
     result = {"sent": 0, "emails": 0, "failed": 0}
-    ids = list(db.scalars(select(ReportSchedule.id).where(ReportSchedule.enabled.is_(True))))
+    inactive = billing.inactive_org_ids(db)  # no working plan: report emails pause
+    ids = list(db.scalars(select(ReportSchedule.id).where(
+        ReportSchedule.enabled.is_(True), ReportSchedule.org_id.not_in(inactive) if inactive else True)))
     db.rollback()
     for sid in ids:
         # lock the row: two workers never send the same report

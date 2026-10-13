@@ -121,6 +121,9 @@ class Camera(Base):
     snapshots_allowed: Mapped[bool | None]
     frame_width: Mapped[int | None] = mapped_column(Integer)
     frame_height: Mapped[int | None] = mapped_column(Integer)
+    # More cameras than the plan allows: the newest ones are paused (their numbers are not stored
+    # until the plan is upgraded or another camera is removed). See services/plan_limits.py.
+    plan_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
     device: Mapped[Device] = relationship(back_populates="cameras")
 
@@ -409,6 +412,9 @@ class VideoJob(Base):
     finished_at: Mapped[datetime | None]
     updated_at: Mapped[datetime | None]  # last progress note from the worker (a dead worker is noticed)
     video_deleted_at: Mapped[datetime | None]  # annotated video removed (kept numbers)
+    # Plan usage: minutes of video counted against the month in which the analysis was started.
+    billed_month: Mapped[str | None] = mapped_column(String(7))  # "2026-10"
+    billed_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
 
 TIMESERIES = {
     # table -> time column (for hypertables and retention)

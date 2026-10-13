@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from ...db import utcnow
 from ...saas.errors import AppError, NotFound
 from ...saas.models import Organization, User
-from ...saas.services import audit
+from ...saas.services import audit, billing
 from ...settings import get_settings
 from ..models import AlertEvent, AlertRule, Camera, Coverage, Device, NotificationChannel, Site, ZoneStat
 from . import analytics, camera_config, devices, notify
@@ -345,7 +345,9 @@ def evaluate_all(db: Session, now: datetime | None = None) -> dict[str, int]:
     """Celery beat, every minute. Each rule in its own small transaction (row lock, skip busy)."""
     now = now or utcnow()
     result = {"checked": 0, "fired": 0, "resolved": 0, "errors": 0}
-    ids = list(db.scalars(select(AlertRule.id).where(AlertRule.enabled.is_(True))))
+    inactive = billing.inactive_org_ids(db)  # no working plan: alerts pause
+    ids = list(db.scalars(select(AlertRule.id).where(
+        AlertRule.enabled.is_(True), AlertRule.org_id.not_in(inactive) if inactive else True)))
     db.rollback()
     for rid in ids:
         rule = db.scalar(select(AlertRule).where(AlertRule.id == rid).with_for_update(skip_locked=True))

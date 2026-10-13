@@ -93,7 +93,10 @@ def list_jobs(db: Session, org: Organization) -> list[VideoJob]:
 
 
 def create_job(db: Session, org: Organization, actor: User, name: str, size: int) -> VideoJob:
+    from . import plan_limits
+
     settings = get_settings()
+    plan_limits.check_can_upload_video(db, org.id)  # 402 when this month's video minutes are used up
     ext = Path(name).suffix.lower()
     if ext not in ALLOWED_EXT:
         raise AppError(
@@ -210,6 +213,9 @@ def start(db: Session, job: VideoJob, actor: User) -> VideoJob:
             "Wait until one is finished.",
             code="busy",
         )
+    from . import plan_limits
+
+    plan_limits.charge_video(db, job)  # 402 when the video is longer than the minutes left this month
     job.status, job.progress, job.error, job.result = "queued", 0.0, None, None
     job.cancel_requested = False
     job.started_at = job.finished_at = None

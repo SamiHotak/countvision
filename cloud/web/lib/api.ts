@@ -26,6 +26,7 @@ export interface Me {
   google_linked: boolean;
   created_at: string;
   organizations: OrgBrief[];
+  is_platform_admin?: boolean;
 }
 
 export interface Org {
@@ -35,6 +36,7 @@ export interface Org {
   created_at: string;
   my_role: Role;
   member_count: number;
+  billing?: import("./billing").BillingBrief | null;
 }
 
 export interface Member {
@@ -202,6 +204,7 @@ export interface Camera {
   desired_version: number;
   applied_version: number;
   config_error: string | null;
+  plan_paused?: boolean;
 }
 
 export interface DeviceDetail extends Device {

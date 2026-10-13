@@ -77,6 +77,12 @@ function CameraRow({ cam, org, online, onRenamed }: {
           id {cam.edge_camera_id}
           {cam.zones.length ? `, zones: ${cam.zones.join(", ")}` : ""}
         </p>
+        {cam.plan_paused ? (
+          <p className="mt-1 text-sm text-muted" data-testid="camera-plan-paused">
+            The plan has no free camera slot, so this camera&apos;s numbers are not stored.{" "}
+            <Link href={`/app/orgs/${org.id}/billing`} className="text-accent">Upgrade the plan</Link> or remove another device.
+          </p>
+        ) : null}
         {sending && cam.config_error ? (
           <p className="mt-1 text-sm text-danger">New lines not used by the device: {cam.config_error}</p>
         ) : sending ? (
