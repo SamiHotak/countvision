@@ -146,8 +146,9 @@ Test mode costs 0 EUR and moves no money.
    - Log in: `C:\Users\hotak\stripe\stripe.exe login`, press Enter, allow it in the browser.
 5. **Start forwarding** (in a NEW PowerShell window, keep it open while you test):
    ```
-   C:\Users\hotak\stripe\stripe.exe listen --forward-to localhost:8001/api/billing/stripe-webhook
+   C:\Users\hotak\stripe\stripe.exe listen --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to localhost:8001/api/billing/stripe-webhook
    ```
+   (New Stripe CLI versions refuse `listen` without `--events`.)
    It prints `Your webhook signing secret is whsec_...`. Copy that value.
 6. **Tell the cloud.** In `cloud\.env` (create it from `.env.example` if missing) add two lines:
    ```

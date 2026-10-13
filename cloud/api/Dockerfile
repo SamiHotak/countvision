@@ -6,8 +6,9 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10 \
     CV_DATA_DIR=/data \
     CV_VIDEO_MODEL=/opt/models/yolox_tiny.onnx \
     ORT_DISABLE_TELEMETRY=1
@@ -21,20 +22,22 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core ffmpeg libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Dependencies first (cached layers), then the code.
+# Dependencies first (cached layers), then the code. The pip download cache is a BuildKit cache
+# mount: a build that fails half way (slow internet) keeps what it downloaded for the next try,
+# and the cache never ends up inside the image.
 COPY cloud/api/pyproject.toml ./cloud/
-RUN mkdir cloud/countvision_cloud && echo '__version__ = "0"' > cloud/countvision_cloud/__init__.py \
+RUN --mount=type=cache,target=/root/.cache/pip mkdir cloud/countvision_cloud && echo '__version__ = "0"' > cloud/countvision_cloud/__init__.py \
     && pip install ./cloud && pip uninstall -y countvision-cloud && rm -rf cloud/countvision_cloud cloud/build
 
 # The edge counting engine (same code as on the devices) + YOLOX-Tiny (Apache-2.0, 20 MB, checked).
 COPY edge/pyproject.toml edge/README.md ./edge/
 COPY edge/countvision_edge ./edge/countvision_edge
-RUN pip install "./edge[onnx]" \
+RUN --mount=type=cache,target=/root/.cache/pip pip install "./edge[onnx]" \
     && countvision-edge models download yolox_tiny --dir /opt/models
 
 COPY cloud/api/countvision_cloud ./cloud/countvision_cloud
 COPY cloud/api/alembic.ini ./cloud/
-RUN pip install --no-deps ./cloud \
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-deps ./cloud \
     && useradd --uid 10002 --create-home countvision \
     && mkdir -p /data && chown countvision /data
 
