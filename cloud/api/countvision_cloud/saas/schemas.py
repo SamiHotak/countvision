@@ -142,6 +142,7 @@ class InviteOut(BaseModel):
     invited_by: str | None
     created_at: datetime
     expires_at: datetime
+    link: str | None = None  # local edition only, right after creating (no email there)
 
 
 class InvitePreviewOut(BaseModel):

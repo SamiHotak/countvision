@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -26,6 +28,30 @@ UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_HEADER = "x-countvision"
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Local edition: renew the built-in edge agent's files if needed, start the in-process timers."""
+    settings = get_settings()
+    started = False
+    if settings.is_local:
+        from .db import db_session
+        from .local import background, setup
+
+        try:
+            with db_session() as db:
+                setup.ensure_edge_files(db)
+        except Exception:  # the database may not be migrated yet: the API still starts
+            log.exception("Could not check the built-in edge agent's files")
+        if settings.local_background:
+            background.start()
+            started = True
+    yield
+    if started:
+        from .local import background
+
+        background.stop()
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     setup_logging(settings.log_level)
@@ -33,7 +59,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="CountVision API", version=__version__,
         docs_url="/api/docs" if docs else None, redoc_url=None,
-        openapi_url="/api/openapi.json" if docs else None,
+        openapi_url="/api/openapi.json" if docs else None, lifespan=lifespan,
     )
     install_error_handlers(app)
 
@@ -61,18 +87,28 @@ def create_app() -> FastAPI:
             log.info("%s %s -> %s (%.0f ms)", request.method, request.url.path, response.status_code, ms)
         return response
 
-    for router in (health.router, auth.router, me.router, orgs.router, orgs.invite_router, billing.router,
-                   billing.webhook_router, admin.router, manage.router,
-                   dashboards.router, integrations.router, video.router, device_api.router, live_api.router):
+    routers = [health.router, auth.router, me.router, orgs.router, orgs.invite_router, manage.router,
+               dashboards.router, integrations.router, video.router, device_api.router, live_api.router]
+    if not settings.is_local:  # the local edition has a licence instead of Stripe, and no operator page
+        routers += [billing.router, billing.webhook_router, admin.router]
+    for router in routers:
         app.include_router(router)
+    from .local import router as local_router
+
+    app.include_router(local_router.public_router)
+    if settings.is_local:
+        app.include_router(local_router.router)
     app.mount("/api/v1", public_app)  # public API with its own docs at /api/v1/docs
     if settings.environment != "production" and settings.email_backend == "memory":
         app.include_router(dev.router)
-        app.include_router(dev_stripe.router)
+        if not settings.is_local:
+            app.include_router(dev_stripe.router)
         log.warning("Dev outbox enabled at /api/dev/outbox (memory email backend)")
-    log.info("CountVision API %s (%s), web %s, email %s/%s, google %s, billing %s", __version__,
-             settings.environment, settings.web_url, settings.email_backend, settings.email_delivery,
+    log.info("CountVision API %s (%s, %s edition), web %s, email %s/%s, google %s, billing %s", __version__,
+             settings.environment, settings.edition, settings.web_url, settings.email_backend,
+             settings.email_delivery,
              "on" if settings.google_enabled else "off",
+             "licence key" if settings.is_local else
              ("on (Stripe TEST mode)" if settings.stripe_test_mode else "on (Stripe LIVE)")
              if settings.billing_enabled else "off")
     return app

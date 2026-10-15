@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import * as React from "react";
 
 import { PageTitle } from "@/components/app-shell";
+import { useEdition } from "@/components/edition";
 import { Loading } from "@/components/me";
 import { OrgGate } from "@/components/org-gate";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,14 @@ function channelDetail(c: Channel): string {
 function ChannelDialog({ org, members, open, onClose, onSaved }: {
   org: Org; members: Member[]; open: boolean; onClose: () => void; onSaved: (c: Channel) => void;
 }) {
-  const [kind, setKind] = React.useState<ChannelKind>("telegram");
+  const { edition } = useEdition();
+  // CountVision Local: no Telegram (needs internet); email only with a mail server
+  const kinds = (["telegram", "email", "webhook"] as const).filter(
+    (k) => (k !== "telegram" || edition.telegram) && (k !== "email" || edition.email));
+  const [kind, setKind] = React.useState<ChannelKind>(kinds[0]);
+  React.useEffect(() => {
+    if (!kinds.includes(kind as (typeof kinds)[number])) setKind(kinds[0]);
+  }, [kinds, kind]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [fields, setFields] = React.useState<Record<string, string>>({});
@@ -95,7 +103,7 @@ function ChannelDialog({ org, members, open, onClose, onSaved }: {
       <form onSubmit={submit} className="space-y-4" noValidate>
         {error ? <Notice tone="error">{error}</Notice> : null}
         <div className="inline-flex rounded-[var(--radius-s)] border border-rule bg-ink p-0.5" role="radiogroup" aria-label="Kind">
-          {(["telegram", "email", "webhook"] as const).map((k) => (
+          {kinds.map((k) => (
             <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
               className={cn("h-8 cursor-pointer rounded-[5px] px-3 text-sm", kind === k ? "bg-raise text-text" : "text-muted hover:text-text")}>
               {CHANNEL_LABEL[k]}
@@ -191,6 +199,7 @@ function RuleDialog({ org, sites, channels, rule, open, onClose, onSaved }: {
   org: Org; sites: Site[]; channels: Channel[]; rule: AlertRule | null; open: boolean; onClose: () => void;
   onSaved: () => void;
 }) {
+  const onScreen = useEdition().edition.edition === "local"; // local: alerts show on screen (the bell)
   const [kind, setKind] = React.useState<AlertKind>("occupancy");
   const [siteId, setSiteId] = React.useState("");
   const [threshold, setThreshold] = React.useState("20");
@@ -212,7 +221,7 @@ function RuleDialog({ org, sites, channels, rule, open, onClose, onSaved }: {
     setDuration(String(rule?.duration_min ?? KIND_INFO[k].defaultDuration));
     setZone(rule?.zone ?? "");
     setCamera(rule?.camera_id ?? "");
-    setPicked(new Set(rule?.channel_ids ?? channels.map((c) => c.id).slice(0, 1)));
+    setPicked(new Set(rule?.channel_ids ?? (onScreen ? [] : channels.map((c) => c.id).slice(0, 1))));
     setError(null);
     setFields({});
   }, [open, rule, sites, channels]);
@@ -323,14 +332,19 @@ function RuleDialog({ org, sites, channels, rule, open, onClose, onSaved }: {
                 </label>
               ))}
             </div>
-          ) : <p className="text-sm text-muted">Add a channel first (below the alerts).</p>}
+          ) : onScreen ? null : <p className="text-sm text-muted">Add a channel first (below the alerts).</p>}
+          {onScreen ? (
+            <p className="mt-1.5 text-sm text-faint">
+              Every alert also shows on screen (the bell at the top). Channels are optional here.
+            </p>
+          ) : null}
           {fields.channel_ids ? <p className="mt-1 text-sm text-danger">{fields.channel_ids}</p> : null}
         </fieldset>
         <Field label="Name (optional)" id="rule-name" name="name" maxLength={120} defaultValue={rule?.name ?? ""}
           placeholder={info.label} key={`${rule?.id}-${open}`} />
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" busy={busy} disabled={!picked.size || !siteId}>{rule ? "Save alert" : "Create alert"}</Button>
+          <Button type="submit" busy={busy} disabled={(!picked.size && !onScreen) || !siteId}>{rule ? "Save alert" : "Create alert"}</Button>
         </div>
       </form>
     </Dialog>
@@ -348,6 +362,7 @@ function ruleCondition(r: AlertRule): string {
 }
 
 function AlertsView({ org }: { org: Org }) {
+  const onScreen = useEdition().edition.edition === "local"; // local: alerts show on screen (the bell)
   const [rules, setRules] = React.useState<AlertRule[] | null>(null);
   const [channels, setChannels] = React.useState<Channel[]>([]);
   const [events, setEvents] = React.useState<AlertEvent[]>([]);
@@ -411,8 +426,8 @@ function AlertsView({ org }: { org: Org }) {
     <>
       <PageTitle title="Alerts">
         {canEdit && sites.length ? (
-          <Button onClick={() => { setEditing(null); setRuleOpen(true); }} disabled={!channels.length}
-            title={channels.length ? undefined : "Add a channel first"}>New alert</Button>
+          <Button onClick={() => { setEditing(null); setRuleOpen(true); }} disabled={!channels.length && !onScreen}
+            title={channels.length || onScreen ? undefined : "Add a channel first"}>New alert</Button>
         ) : null}
       </PageTitle>
       {notice ? <Notice tone={notice.tone} className="mb-5">{notice.text}</Notice> : null}
@@ -430,8 +445,9 @@ function AlertsView({ org }: { org: Org }) {
         {!rules ? <Loading /> : rules.length === 0 ? (
           <div className="px-5 py-6 text-muted">
             <p className="max-w-[62ch]">
-              Get a message when a shop is full, a queue is long, a camera stops counting or visitors drop. First add a
-              channel below (Telegram is the fastest), then create an alert.
+              {onScreen
+                ? "See it on screen when the shop is full, a queue is long, a camera stops counting or visitors drop. The bell at the top shows alerts that are on now."
+                : "Get a message when a shop is full, a queue is long, a camera stops counting or visitors drop. First add a channel below (Telegram is the fastest), then create an alert."}
             </p>
           </div>
         ) : (
@@ -447,7 +463,7 @@ function AlertsView({ org }: { org: Org }) {
                   </p>
                   <p className="text-sm text-muted">{ruleCondition(r)}</p>
                   <p className="text-sm text-faint">
-                    To {r.channel_ids.map((id) => byId.get(id)?.name).filter(Boolean).join(", ") || "nobody (choose a channel)"}
+                    To {r.channel_ids.map((id) => byId.get(id)?.name).filter(Boolean).join(", ") || (onScreen ? "the screen only" : "nobody (choose a channel)")}
                     {r.last_message ? `. Now: ${r.last_message}` : ""}
                   </p>
                 </div>
@@ -474,7 +490,10 @@ function AlertsView({ org }: { org: Org }) {
           {canEdit ? <Button size="sm" variant="secondary" onClick={() => setChOpen(true)}>Add channel</Button> : null}
         </PanelHead>
         {channels.length === 0 ? (
-          <p className="px-5 py-5 text-muted">No channel yet. Add Telegram, email or a webhook.</p>
+          <p className="px-5 py-5 text-muted">
+            {onScreen ? "No channel. Alerts show on screen; a webhook can pass them to a system in your network."
+              : "No channel yet. Add Telegram, email or a webhook."}
+          </p>
         ) : (
           <ul className="divide-y divide-rule" aria-label="Channels">
             {channels.map((c) => (

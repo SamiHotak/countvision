@@ -128,6 +128,14 @@ def create_channel(
     ) >= MAX_CHANNELS:
         raise AppError(f"At most {MAX_CHANNELS} channels.", code="limit", status=409)
     kind = data["kind"]
+    settings = get_settings()
+    if settings.is_local and kind == "telegram":
+        raise AppError("Telegram needs the internet, so CountVision Local does not offer it. Alerts show "
+                       "on screen (the bell), and webhooks reach systems in your network.",
+                       code="not_in_local", status=422)
+    if settings.is_local and kind == "email" and settings.email_backend == "off":
+        raise AppError("Email is off: this CountVision has no mail server set up. Alerts show on screen "
+                       "(the bell) instead.", code="email_off", status=422)
     ch = NotificationChannel(
         org_id=org.id, kind=kind, name=data.get("name") or kind.capitalize(), config={}, created_by=actor.id
     )

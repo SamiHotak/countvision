@@ -150,7 +150,12 @@ def entitlement_of(row: OrgBilling | None, now: datetime | None = None) -> Entit
 
 
 def entitlement(db: Session, org_id: uuid.UUID) -> Entitlement:
-    if not get_settings().billing_enabled:
+    settings = get_settings()
+    if settings.is_local:  # CountVision Local: a licence key instead of Stripe (one per installation)
+        from ...local import licence
+
+        return licence.entitlement(db)
+    if not settings.billing_enabled:
         return Entitlement("off", UNLIMITED, True)
     return entitlement_of(billing_row(db, org_id))
 
@@ -158,6 +163,12 @@ def entitlement(db: Session, org_id: uuid.UUID) -> Entitlement:
 def require_active(db: Session, org_id: uuid.UUID) -> Entitlement:
     ent = entitlement(db, org_id)
     if not ent.active:
+        if get_settings().is_local:
+            why = "Your free trial has ended." if ent.state == "expired" else "Your licence has ended."
+            raise PaymentRequired(
+                f"{why} Add a licence key on the Licence page to keep using CountVision. Your data is safe.",
+                code="licence_required",
+            )
         why = "Your free trial has ended." if ent.state == "expired" else "Your subscription has ended."
         raise PaymentRequired(
             f"{why} Choose a plan on the Billing page to keep using CountVision. Your data is safe.",
@@ -177,9 +188,11 @@ def check_limit(
     used = usage(db, org_id).get(name, 0) if used is None else used
     if used + adding > limit:
         label = LIMIT_LABELS.get(name, name)
+        where = ("A bigger licence key (Licence page)" if get_settings().is_local
+                 else "Upgrade on the Billing page")
         raise PaymentRequired(
             f"Your plan ({ent.plan.name}) includes {limit} {label} and you use {used}. "
-            "Upgrade on the Billing page, or free some up first.",
+            f"{where}, or free some up first.",
             code="plan_limit",
             fields={"limit": str(limit), "used": str(used), "name": name},
         )
@@ -188,7 +201,12 @@ def check_limit(
 
 def inactive_org_ids(db: Session) -> set[uuid.UUID]:
     """Organizations without a working plan (alerts, reports and webhooks skip them)."""
-    if not get_settings().billing_enabled:
+    settings = get_settings()
+    if settings.is_local:
+        from ...local import licence
+
+        return set() if licence.entitlement(db).active else licence.all_org_ids(db)
+    if not settings.billing_enabled:
         return set()
     now = utcnow()
     return {row.org_id for row in db.scalars(select(OrgBilling)) if not entitlement_of(row, now).active}

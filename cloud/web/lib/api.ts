@@ -57,6 +57,7 @@ export interface Invite {
   invited_by: string | null;
   created_at: string;
   expires_at: string;
+  link?: string | null; // CountVision Local (no email): shown once after inviting
 }
 
 export interface InvitePreview {
@@ -186,6 +187,8 @@ export interface Device {
   cameras_online: number;
   detector: { name?: string; runtime?: string; device?: string; license?: string } | null;
   upload: { pending?: number; last_success?: number | null; state?: string } | null;
+  manages_cameras?: boolean; // cameras are added/removed in the web app
+  builtin?: boolean; // CountVision Local: the computer it runs on
 }
 
 export interface Camera {
@@ -205,6 +208,9 @@ export interface Camera {
   applied_version: number;
   config_error: string | null;
   plan_paused?: boolean;
+  managed?: boolean; // added in the web app
+  source_kind?: "webcam" | "rtsp" | "http" | null;
+  source_label?: string | null; // the address without the password
 }
 
 export interface DeviceDetail extends Device {

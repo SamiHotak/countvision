@@ -16,8 +16,10 @@ from sqlalchemy.orm import Session
 
 from ...db import get_db, utcnow
 from ...saas.deps import OrgContext, org_access, require_plan
+from ...saas.errors import AppError
 from ...saas.models import Membership, Role, User
 from ...saas.schemas import OkOut
+from ...settings import get_settings
 from ..models import AlertRule, WebhookDelivery
 from ..schemas import AlertRuleIn, AlertRulePatch, ApiKeyIn, ChannelIn, ChannelPatch, TelegramChatsIn
 from ..services import alerts, api_keys, channels, notify, sites
@@ -97,6 +99,9 @@ def telegram_chats(
     body: TelegramChatsIn, ctx: OrgContext = Depends(org_access(Role.MEMBER))
 ) -> dict[str, Any]:
     """Chats that recently wrote to the bot: the person sends any message to the bot, then picks it."""
+    if get_settings().is_local:
+        raise AppError("Telegram needs the internet, so CountVision Local does not offer it.",
+                       code="not_in_local", status=422)
     return notify.telegram_chats(body.bot_token.strip())
 
 

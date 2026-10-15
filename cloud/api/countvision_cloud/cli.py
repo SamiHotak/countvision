@@ -1,5 +1,5 @@
 """Command line: countvision-cloud migrate | wait | cleanup | serve | sample-data | send-reports |
-make-admin | stripe-setup.
+make-admin | stripe-setup | set-password | backup | restore | licence-keygen | licence-create | licence-show.
 
 Docker runs "countvision-cloud wait && countvision-cloud migrate" before the API starts.
 """
@@ -7,6 +7,7 @@ Docker runs "countvision-cloud wait && countvision-cloud migrate" before the API
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import sys
 import time
@@ -71,6 +72,94 @@ def wait(timeout_s: float = 60) -> None:
             time.sleep(2)
 
 
+def _default_key_dir():
+    """Where the licence PRIVATE key lives: in the user's home, never inside the repository."""
+    from pathlib import Path
+
+    return Path.home() / "CountVision-licence-signing"
+
+
+def _set_password(email_addr: str, password: str | None) -> None:
+    import getpass
+
+    from sqlalchemy import func, select
+
+    from .db import db_session
+    from .saas import security
+    from .saas.models import User
+    from .saas.services import audit, auth
+
+    if not password:
+        password = getpass.getpass("New password (at least 10 characters): ")
+        if getpass.getpass("Again: ") != password:
+            raise SystemExit("The two passwords are different.")
+    with db_session() as db:
+        user = db.scalar(select(User).where(func.lower(User.email) == email_addr.strip().lower()))
+        if user is None:
+            raise SystemExit(f"No account with the email {email_addr}.")
+        auth.check_password(password, user.email)
+        user.password_hash = security.hash_password(password)
+        auth.logout_everywhere(db, user, keep_token=None)
+        audit.record(db, "user.password_set_cli", actor=None, target_type="user", target_id=user.id)
+    print(f"New password set for {user.email}. Log in with it now.")
+
+
+def _licence_keygen(args) -> None:
+    from pathlib import Path
+
+    from .local import licence, licence_key
+
+    out = Path(args.out)
+    target = out / "licence_private.pem"
+    if target.exists():
+        raise SystemExit(f"{target} exists already. One key pair is enough - keep using it. (Delete it only "
+                         "if you really want new keys: every licence made so far stops working.)")
+    out.mkdir(parents=True, exist_ok=True)
+    key = licence.new_private_key()
+    target.write_bytes(licence.private_key_pem(key))
+    with contextlib.suppress(OSError):
+        target.chmod(0o600)
+    public = licence.public_text_of(key)
+    print(f"PRIVATE key written to {target}")
+    print("  -> NEVER commit it, never email it. Copy it to a USB stick as a backup.")
+    print(f"PUBLIC key: {public}")
+    module = Path(licence_key.__file__)
+    if args.no_write_public:
+        print(f"Put the public key into {module} (PUBLIC_KEY = \"...\") and commit that file.")
+        return
+    text = module.read_text(encoding="utf-8")
+    new = text.replace('PUBLIC_KEY = ""', f'PUBLIC_KEY = "{public}"')
+    if new == text:
+        print(f"{module} already has a public key; NOT changed. Replace it by hand if you mean to.")
+        return
+    module.write_text(new, encoding="utf-8")
+    print(f"Public key written into {module}. Commit that file (it is safe to publish).")
+
+
+def _licence_create(args) -> None:
+    from datetime import date
+    from pathlib import Path
+
+    from .local import licence
+
+    key_file = Path(args.key)
+    if not key_file.is_file():
+        raise SystemExit(f"Private key not found: {key_file}. Run 'countvision-cloud licence-keygen' once.")
+    private = licence.load_private_key(key_file.read_bytes())
+    valid = date.fromisoformat(args.valid_until) if args.valid_until else None
+    updates = date.fromisoformat(args.updates_until) if args.updates_until else None
+    key = licence.create_key(private, customer=args.customer, cameras=args.cameras, valid_until=valid,
+                             updates_until=updates)
+    lic = licence.parse_key(key, licence.public_text_of(private))
+    print(f"Licence {lic.id} for {lic.customer}: {lic.cameras} cameras, valid until "
+          f"{lic.valid_until or 'forever'}, updates until {lic.updates_until or '-'}")
+    print()
+    print(key)
+    if args.out:
+        Path(args.out).write_text(key + "\n", encoding="utf-8")
+        print(f"\nAlso written to {args.out}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="countvision-cloud", description="CountVision cloud tools")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -90,6 +179,28 @@ def main(argv: list[str] | None = None) -> int:
     ma.add_argument("--email", required=True)
     ma.add_argument("--remove", action="store_true", help="take the admin page away again")
     sub.add_parser("stripe-setup", help="create the CountVision products, prices and portal in Stripe")
+    sp = sub.add_parser("set-password", help="set a new password for an account (forgotten password, "
+                        "no mail server)")
+    sp.add_argument("--email", required=True)
+    sp.add_argument("--password", help="the new password (asked for when left out)")
+    bk = sub.add_parser("backup", help="local edition: write a backup file (database + secret key)")
+    bk.add_argument("--folder", help="target folder (default: the backup folder)")
+    rs = sub.add_parser("restore", help="local edition: replace ALL data with a backup file")
+    rs.add_argument("file")
+    rs.add_argument("--yes", action="store_true", help="do not ask")
+    kg = sub.add_parser("licence-keygen", help="create the licence signing key pair (ONCE, on Ezat's laptop)")
+    kg.add_argument("--out", default=str(_default_key_dir()), help="folder for the PRIVATE key")
+    kg.add_argument("--no-write-public", action="store_true",
+                    help="only print the public key, do not put it into local/licence_key.py")
+    lc = sub.add_parser("licence-create", help="sign a licence key for a customer (needs the private key)")
+    lc.add_argument("--key", default=str(_default_key_dir() / "licence_private.pem"))
+    lc.add_argument("--customer", required=True)
+    lc.add_argument("--cameras", type=int, required=True)
+    lc.add_argument("--valid-until", help="YYYY-MM-DD; leave out for a licence that never ends")
+    lc.add_argument("--updates-until", help="YYYY-MM-DD: end of the updates/support period (shown only)")
+    lc.add_argument("--out", help="also write the key into this text file")
+    ls = sub.add_parser("licence-show", help="check a licence key and show what it contains")
+    ls.add_argument("key")
     args = parser.parse_args(argv)
     setup_logging(get_settings().log_level)
 
@@ -153,6 +264,41 @@ def main(argv: list[str] | None = None) -> int:
         for line in billing.setup_stripe():
             print(" -", line)
         print("Done. Safe to run again after changing prices in saas/plans.py.")
+    elif args.cmd == "set-password":
+        _set_password(args.email, args.password)
+    elif args.cmd == "backup":
+        from .db import db_session
+        from .local import backup
+
+        with db_session() as db:
+            info = backup.create(db, custom=args.folder)
+        print(f"Backup written: {info.path} ({info.size // 1024} kB)")
+    elif args.cmd == "restore":
+        from pathlib import Path
+
+        from .db import db_session
+        from .local import backup
+
+        path = Path(args.file)
+        meta = backup.check_file(path)
+        if not args.yes:
+            answer = input(f"Replace ALL data with the backup from {meta.get('created_at')} "
+                           f"({meta.get('organization')})? Type yes: ")
+            if answer.strip().lower() != "yes":
+                raise SystemExit("Cancelled.")
+        with db_session() as db:
+            result = backup.restore(db, path)
+        print(f"Restored {result['restored']}. Safety backup of the old data: {result['safety_backup']}")
+    elif args.cmd == "licence-keygen":
+        _licence_keygen(args)
+    elif args.cmd == "licence-create":
+        _licence_create(args)
+    elif args.cmd == "licence-show":
+        from .local import licence
+
+        lic = licence.parse_key(args.key)
+        for k, v in lic.as_dict().items():
+            print(f"{k:14} {v}")
     elif args.cmd == "serve":
         import uvicorn
 

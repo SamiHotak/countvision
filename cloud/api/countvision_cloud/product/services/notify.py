@@ -120,6 +120,17 @@ def _dispatch(kind: str, ident: str, payload: Any) -> None:
             return
         except Exception:  # broker down: try now instead of losing it (beat retries webhooks anyway)
             log.exception("Could not queue %s %s, sending directly", kind, ident)
+    if get_settings().email_delivery == "thread":
+        from ...local import background
+
+        background.submit(_send_now, kind, ident, payload)
+        return
+    _send_now(kind, ident, payload)
+
+
+def _send_now(kind: str, ident: str, payload: Any) -> None:
+    from ... import tasks
+
     try:
         if kind == "telegram":
             tasks.run_telegram(ident, payload)

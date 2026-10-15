@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from ...db import get_db, utcnow
 from ...saas.deps import OrgContext, org_access, require_plan
-from ...saas.errors import NotFound
+from ...saas.errors import Conflict, NotFound
 from ...saas.models import Role
 from ...saas.schemas import OkOut
 from ..models import Device, Site
@@ -23,9 +23,11 @@ from ..schemas import (
     CameraDetailOut,
     CameraOut,
     CameraPatch,
+    CameraSourceIn,
     DeviceDetailOut,
     DeviceOut,
     DevicePatch,
+    ManagedCameraIn,
     PairingCodeIn,
     PairingCodeOut,
     SiteIn,
@@ -33,7 +35,7 @@ from ..schemas import (
     SitePatch,
     SnapshotOut,
 )
-from ..services import camera_config, devices, sites, stats
+from ..services import camera_config, devices, managed_cameras, sites, stats
 
 router = APIRouter(prefix="/api/orgs/{org_id}", tags=["sites and devices"])
 
@@ -102,17 +104,27 @@ def pairing_code_status(code_id: uuid.UUID, ctx: OrgContext = Depends(org_access
 
 # --- devices ----------------------------------------------------------------------------------
 
+def _cams(d: Device) -> list:
+    """The device's cameras without the ones removed in the web app (those in the order added)."""
+    cams = [c for c in d.cameras if c.removed_at is None]
+    if d.manages_cameras:
+        cams.sort(key=lambda c: (c.created_at, c.edge_camera_id))
+    return cams
+
+
 def _device_out(d: Device) -> dict:
     now = utcnow()
     online = devices.is_online(d, now)
+    cams = _cams(d)
     return dict(
         id=d.id, name=d.name, site_id=d.site_id, site_name=d.site.name, edge_device_id=d.edge_device_id,
         agent_version=d.agent_version, online=online, last_seen_at=d.last_seen_at,
         last_data_at=d.last_data_at, paired_at=d.paired_at, revoked=d.revoked_at is not None,
-        camera_count=len(d.cameras),
-        cameras_online=sum(1 for c in d.cameras
+        camera_count=len(cams),
+        cameras_online=sum(1 for c in cams
                            if online and c.state in ("running", "paused") and c.connected is not False),
         detector=(d.status or {}).get("detector"), upload=(d.status or {}).get("upload"),
+        manages_cameras=d.manages_cameras, builtin=d.builtin,
     )
 
 
@@ -126,7 +138,7 @@ def get_device(device_id: uuid.UUID, ctx: OrgContext = Depends(org_access()),
                db: Session = Depends(get_db)) -> DeviceDetailOut:
     d = devices.get_device(db, ctx.org, device_id)
     online = devices.is_online(d)
-    today = stats.event_totals(db, [c.id for c in d.cameras], stats.local_midnight(d.site.timezone))
+    today = stats.event_totals(db, [c.id for c in _cams(d)], stats.local_midnight(d.site.timezone))
     batches, rows = devices.batch_stats(db, d, utcnow() - timedelta(hours=24))
     cams = [
         CameraOut(id=c.id, edge_camera_id=c.edge_camera_id, name=c.name,
@@ -135,8 +147,9 @@ def get_device(device_id: uuid.UUID, ctx: OrgContext = Depends(org_access()),
                   reconnects=c.reconnects, alert=c.alert, lines=c.lines or [], zones=c.zones or [],
                   last_seen_at=c.last_seen_at, today=today.get(c.id, {}),
                   desired_version=c.desired_version, applied_version=c.applied_version,
-                  config_error=c.config_error, plan_paused=c.plan_paused)
-        for c in d.cameras
+                  config_error=c.config_error, plan_paused=c.plan_paused, managed=bool(c.source_kind),
+                  source_kind=c.source_kind, source_label=c.source_label)
+        for c in _cams(d)
     ]
     return DeviceDetailOut(**_device_out(d), cameras=cams, site_timezone=d.site.timezone,
                            batches_24h=batches, rows_24h=rows)
@@ -152,10 +165,17 @@ def update_device(device_id: uuid.UUID, body: DevicePatch, ctx: OrgContext = Dep
     return DeviceOut(**_device_out(devices.get_device(db, ctx.org, device_id)))
 
 
+def _not_builtin(d: Device) -> Device:
+    if d.builtin:
+        raise Conflict("This is the computer CountVision runs on. Remove its cameras instead.",
+                       code="builtin_device")
+    return d
+
+
 @router.post("/devices/{device_id}/revoke", response_model=OkOut)
 def revoke_device(device_id: uuid.UUID, ctx: OrgContext = Depends(org_access(Role.ADMIN)),
                   db: Session = Depends(get_db)) -> OkOut:
-    devices.revoke_device(db, devices.get_device(db, ctx.org, device_id), ctx.user)
+    devices.revoke_device(db, _not_builtin(devices.get_device(db, ctx.org, device_id)), ctx.user)
     db.commit()
     return OkOut(message="Device removed. It can no longer send data; its numbers stay.")
 
@@ -163,9 +183,47 @@ def revoke_device(device_id: uuid.UUID, ctx: OrgContext = Depends(org_access(Rol
 @router.delete("/devices/{device_id}", response_model=OkOut)
 def delete_device(device_id: uuid.UUID, ctx: OrgContext = Depends(org_access(Role.ADMIN)),
                   db: Session = Depends(get_db)) -> OkOut:
-    devices.delete_device(db, devices.get_device(db, ctx.org, device_id), ctx.user)
+    devices.delete_device(db, _not_builtin(devices.get_device(db, ctx.org, device_id)), ctx.user)
     db.commit()
     return OkOut(message="Device and its data deleted.")
+
+
+# --- cameras added in the web app (devices that manage their cameras, e.g. CountVision Local) ------
+
+@router.post("/devices/{device_id}/cameras", response_model=CameraOut, status_code=201,
+             dependencies=[Depends(require_plan)])
+def add_camera(device_id: uuid.UUID, body: ManagedCameraIn,
+               ctx: OrgContext = Depends(org_access(Role.MEMBER)),
+               db: Session = Depends(get_db)) -> CameraOut:
+    """Add a camera (webcam number or stream address). The device starts it within seconds."""
+    d = devices.get_device(db, ctx.org, device_id)
+    cam = managed_cameras.add_camera(db, ctx.org, d, ctx.user, name=body.name, kind=body.kind,
+                                     address=body.address)
+    db.commit()
+    return CameraOut(id=cam.id, edge_camera_id=cam.edge_camera_id, name=cam.name, state=cam.state,
+                     connected=None, fps=None, reconnects=None, alert=None, lines=[], zones=[],
+                     last_seen_at=None, managed=True, source_kind=cam.source_kind,
+                     source_label=cam.source_label)
+
+
+@router.put("/cameras/{camera_id}/source", response_model=OkOut, dependencies=[Depends(require_plan)])
+def change_camera_source(camera_id: uuid.UUID, body: CameraSourceIn,
+                         ctx: OrgContext = Depends(org_access(Role.MEMBER)),
+                         db: Session = Depends(get_db)) -> OkOut:
+    cam = managed_cameras.get_managed(db, ctx.org, camera_id)
+    managed_cameras.change_source(db, ctx.org, cam, ctx.user, kind=body.kind, address=body.address)
+    db.commit()
+    return OkOut(message="Address saved. The camera restarts with it.")
+
+
+@router.delete("/cameras/{camera_id}", response_model=OkOut)
+def remove_camera(camera_id: uuid.UUID, ctx: OrgContext = Depends(org_access(Role.MEMBER)),
+                  db: Session = Depends(get_db)) -> OkOut:
+    """Stop counting this camera. Its numbers stay in the dashboards and reports."""
+    cam = managed_cameras.get_managed(db, ctx.org, camera_id)
+    managed_cameras.remove_camera(db, ctx.org, cam, ctx.user)
+    db.commit()
+    return OkOut(message="Camera removed. Its numbers stay in your dashboards.")
 
 
 @router.patch("/cameras/{camera_id}", response_model=OkOut)

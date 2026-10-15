@@ -102,6 +102,79 @@ connection while waiting), `POST /api/device/snapshots/<request>` (JPEG body or 
 Org API added: `GET /cameras/<id>`, `PUT /cameras/<id>/config`, `POST /cameras/<id>/snapshot`,
 `GET /cameras/<id>/snapshot/<request>` (+ `/image`).
 
+## CountVision Local: the offline edition (Phase 4.5 Session A)
+
+The **same code**, switched with one setting: `CV_EDITION=local`. For a shop that wants everything on
+ONE Windows PC, without internet and without a monthly fee. The Windows installer (setup.exe, a
+launcher, portable PostgreSQL, autostart) comes in Session B; this section is the app side.
+
+What changes with `CV_EDITION=local` (code in `api/countvision_cloud/local/`):
+
+| Cloud | Local |
+|---|---|
+| Redis (rate limits, live updates, device polls, snapshots) | in-process store `local/store.py`, same commands, no Redis server |
+| Celery worker + beat | threads in the API process `local/background.py` (same tasks, same timers) |
+| Stripe plans, 14-day trial per organization | Ed25519 **licence key**, checked offline `local/licence.py`; 14-day trial, 2 cameras per installation |
+| sign up, Google login, Telegram, operator admin page, Billing page | hidden / 404 |
+| sign up + create organization | **first-start wizard** `/setup`: owner, business, site, first camera (one business per installation) |
+| pair a device with a code | the **built-in device "This computer"** is paired automatically: the API writes `cloud.json` + `edge.yaml` into `<CV_DATA_DIR>/edge` |
+| cameras come from the device's YAML | cameras are **added/removed in the web app** (webcam number, RTSP, HTTP/MJPEG); the agent starts/stops them live |
+| alerts by email/Telegram/webhook | alerts **on screen** (the bell) + webhooks in the network; email only with your own SMTP server |
+| emails confirm addresses, invitations by email | no confirmation; invitation **links shown once** to copy |
+| backups by the operator | **Backups** on the Settings page (owner): one `.cvbackup` file (pg_dump + secret key) to a folder / USB stick, restore with a safety backup first |
+
+Settings of the local edition (environment variables): `CV_EDITION=local`, `CV_DATA_DIR` (everything:
+secret key, backups, video jobs, `edge/`), `CV_DATABASE_URL`, `CV_PG_BIN_DIR` (folder with
+`pg_dump`/`pg_restore`), `CV_LOCAL_API_URL` (how the agent reaches the API, default
+`http://127.0.0.1:8001`), `CV_VIDEO_MODEL` (YOLOX-Tiny path), `CV_SMTP_HOST`/... (optional: then email
+works). The secret key is created once in `<CV_DATA_DIR>/secret_key` (it encrypts camera passwords).
+
+**Start the edge agent WITHOUT the API's `CV_` variables** (it also reads `CV_DATA_DIR`,
+`CV_LOG_LEVEL` ...): `countvision-edge run --config <CV_DATA_DIR>/edge/edge.yaml`. The launcher will do
+that; by hand on Windows use a new PowerShell window.
+
+### Try it on Windows (no Docker, needs Python 3.12+, Node 22, a PostgreSQL 16 server)
+
+Docker's database works too: `docker compose up -d db` in `cloud\` (port 5433), then:
+
+```powershell
+# window 1: the API in local mode (from the repo root, venv with: pip install -e "cloud/api[dev]" -e "edge[onnx]")
+$env:CV_EDITION="local"; $env:CV_DATA_DIR="C:\CountVisionLocal"
+$env:CV_DATABASE_URL="postgresql+psycopg://countvision:countvision@localhost:5433/countvision_local"
+docker compose -f cloud\compose.yaml exec db createdb -U countvision countvision_local
+countvision-cloud migrate
+countvision-cloud serve --port 8001
+
+# window 2: the web app (cloud\web: npm run build once)
+cd cloud\web; npm start
+
+# open http://localhost:3000 -> the setup wizard. After step 1, in window 3 (a NEW window, no CV_ variables):
+.venv\Scripts\countvision-edge run --config C:\CountVisionLocal\edge\edge.yaml
+```
+
+### Licence keys (Ezat's laptop only)
+
+```powershell
+countvision-cloud licence-keygen      # ONCE: private key -> %USERPROFILE%\CountVision-licence-signing\licence_private.pem
+                                      # public key -> api\countvision_cloud\local\licence_key.py (commit that file)
+countvision-cloud licence-create --customer "Café Sonne GmbH" --cameras 4 --valid-until 2027-12-31 --updates-until 2027-12-31
+countvision-cloud licence-show CVL1-...
+```
+
+The **private key never goes into the repository** (`.gitignore` blocks `*.pem` and the signing
+folder): who has it can make licences. Keep a copy on a USB stick. Until `licence-keygen` ran, the
+built-in public key is empty: installations then only run the trial. Honest limit: an offline check
+in Python stops casual copying, not a determined cracker.
+
+Other tools for the local edition: `countvision-cloud set-password --email ...` (forgotten password,
+no mail server), `countvision-cloud backup [--folder E:\]`, `countvision-cloud restore FILE`.
+
+### Tests
+
+`pytest cloud/api/tests_local` (no Redis needed; real PostgreSQL; `CV_PG_BIN_DIR` for the backup
+tests). Browser test of a fresh installation: `npx playwright test -c playwright.local.config.ts`
+(see the `local` job in `.github/workflows/ci.yml` for the exact setup).
+
 ## Billing with Stripe (Phase 4 Session C)
 
 **Off by default.** Without a Stripe key there are no plans and no limits (good for development and
@@ -348,7 +421,8 @@ npm run dev
 
 ```powershell
 docker compose up -d db redis                       # in cloud\
-pytest cloud/api/tests                              # API: 94 tests, real Postgres + Redis (pip install -e edge for the video tests)
+pytest cloud/api/tests                              # API: 104 tests, real Postgres + Redis (pip install -e edge for the video tests)
+pytest cloud/api/tests_local                        # local edition: 20 tests, Postgres only (no Redis)
 
 # Browser tests: API with the in-memory mailbox + built web app
 $env:CV_EMAIL_BACKEND="memory"; $env:CV_EMAIL_DELIVERY="sync"; $env:CV_SIGNUPS_PER_IP_HOUR="1000"
@@ -357,7 +431,8 @@ cd cloud\web; npm run build; npm start              # window 2
 cd cloud\web; npx playwright install chromium; npx playwright test   # window 3
 ```
 
-GitHub CI runs both (`cloud` job) and builds and smoke-tests the full Docker stack (`cloud-docker` job).
+GitHub CI runs both (`cloud` job), the local edition (`local` job: API tests + a browser test of a fresh
+installation with the real edge agent) and builds and smoke-tests the full Docker stack (`cloud-docker` job).
 
 ## Licences of the parts
 

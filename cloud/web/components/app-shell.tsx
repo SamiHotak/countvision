@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 
+import { AlertBell } from "@/components/alert-bell";
 import { BillingBanner, PlanGate, useOrgBilling } from "@/components/billing";
 import { Wordmark } from "@/components/brand";
+import { useIsLocal } from "@/components/edition";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/panel";
 import { api, errorText, type Me, type Ok } from "@/lib/api";
@@ -31,6 +33,10 @@ function NavLink({ href, children, exact = false }: { href: string; children: Re
 
 function OrgSwitcher({ me, orgId }: { me: Me; orgId: string | null }) {
   const router = useRouter();
+  const local = useIsLocal(); // CountVision Local: one business per installation
+  if (local && me.organizations.length === 1 && orgId) {
+    return <p className="truncate px-1 font-medium" data-testid="business-name">{me.organizations[0].name}</p>;
+  }
   return (
     <label className="block">
       <span className="sr-only">Organization</span>
@@ -44,7 +50,7 @@ function OrgSwitcher({ me, orgId }: { me: Me; orgId: string | null }) {
         {me.organizations.map((o) => (
           <option key={o.id} value={o.id}>{o.name}</option>
         ))}
-        <option value="__new">+ New organization</option>
+        {!local ? <option value="__new">+ New organization</option> : null}
       </select>
     </label>
   );
@@ -77,6 +83,8 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
   const path = usePathname();
   React.useEffect(() => setOpen(false), [path]);
   const brief = useOrgBilling(orgId);
+  const local = useIsLocal();
+  const licence = brief?.kind === "licence";
 
   async function logout() {
     await api.post("/api/auth/logout").catch(() => undefined);
@@ -97,7 +105,13 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
           <NavLink href={`/app/orgs/${orgId}/video`}>Video analysis</NavLink>
           <NavLink href={`/app/orgs/${orgId}/api`}>API</NavLink>
           <NavLink href={`/app/orgs/${orgId}/members`}>Members</NavLink>
-          {brief?.enabled ? (
+          {licence ? (
+            <NavLink href={`/app/orgs/${orgId}/licence`}>
+              <span className="mr-auto">Licence</span>
+              {brief.state === "trial" ? <span className="text-xs text-muted">{brief.trial_days_left}d trial</span> : null}
+              {!brief.active ? <span className="size-2 rounded-full bg-danger" aria-label="needs attention" /> : null}
+            </NavLink>
+          ) : brief?.enabled ? (
             <NavLink href={`/app/orgs/${orgId}/billing`}>
               <span className="mr-auto">Billing</span>
               {brief.state === "trial" ? <span className="text-xs text-muted">{brief.trial_days_left}d trial</span> : null}
@@ -126,7 +140,10 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
       {/* desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh flex-col gap-6 border-r border-rule bg-panel px-4 py-5 lg:flex">
-        <Wordmark />
+        <div className="flex items-center justify-between gap-2">
+          <Wordmark />
+          {local && orgId ? <AlertBell orgId={orgId} /> : null}
+        </div>
         <OrgSwitcher me={me} orgId={orgId} />
         {nav}
         {footer}
@@ -135,8 +152,10 @@ export function AppShell({ me, orgId, children }: { me: Me; orgId: string | null
       {/* phone top bar */}
       <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-rule bg-ink/95 px-4 py-3 backdrop-blur lg:hidden">
         <Wordmark />
+        <span className="ml-auto" />
+        {local && orgId ? <AlertBell orgId={orgId} /> : null}
         <button
-          className="ml-auto h-9 cursor-pointer rounded-[var(--radius-s)] border border-rule px-3 text-sm"
+          className="h-9 cursor-pointer rounded-[var(--radius-s)] border border-rule px-3 text-sm"
           aria-expanded={open}
           aria-controls="mobile-nav"
           onClick={() => setOpen((o) => !o)}

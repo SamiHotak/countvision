@@ -54,7 +54,7 @@ export function MinutesBar({ used, limit }: { used: number; limit: number }) {
 }
 
 /** Pages that still work without a plan (everything else needs one). */
-const FREE_PAGES = ["/billing", "/members", "/settings"];
+const FREE_PAGES = ["/billing", "/licence", "/members", "/settings"];
 
 /** Plan state of the open organization for the shell: reloads on page changes and after billing changes. */
 export function useOrgBilling(orgId: string | null): BillingBrief | null {
@@ -85,14 +85,17 @@ export const billingChanged = () => window.dispatchEvent(new Event("cv:billing-c
 
 export function BillingBanner({ orgId, brief }: { orgId: string; brief: BillingBrief | null }) {
   const path = usePathname();
-  if (!brief?.enabled || path.endsWith("/billing")) return null;
-  const link = <Link href={`/app/orgs/${orgId}/billing`} className="font-medium text-accent">Choose a plan</Link>;
+  if (!brief?.enabled || path.endsWith("/billing") || path.endsWith("/licence")) return null;
+  const licence = brief.kind === "licence";
+  const link = licence
+    ? <Link href={`/app/orgs/${orgId}/licence`} className="font-medium text-accent">Add a licence key</Link>
+    : <Link href={`/app/orgs/${orgId}/billing`} className="font-medium text-accent">Choose a plan</Link>;
   if (brief.state === "trial" && brief.trial_days_left !== null && brief.trial_days_left <= 5) {
     return (
       <Notice tone="warn" className="mb-6 flex flex-wrap gap-x-4 gap-y-1" data-testid="billing-banner">
         <span className="mr-auto">
           {brief.trial_days_left === 0 ? "Your free trial ends today." : `Your free trial ends in ${brief.trial_days_left} day${brief.trial_days_left === 1 ? "" : "s"}.`}
-          {" "}Your counting and data stay as they are when you choose a plan.
+          {" "}Your counting and data stay as they are when you {licence ? "add a licence" : "choose a plan"}.
         </span>
         {link}
       </Notice>
@@ -114,6 +117,21 @@ export function PlanGate({ orgId, brief, children }: { orgId: string | null; bri
   const path = usePathname();
   const blocked = !!orgId && !!brief && !brief.active && !FREE_PAGES.some((p) => path.endsWith(p) || path.includes(`${p}/`));
   if (!blocked) return <>{children}</>;
+  if (brief!.kind === "licence") {
+    return (
+      <div className="max-w-[560px] py-10" data-testid="plan-gate">
+        <h1 className="text-2xl font-semibold">{brief!.state === "expired" ? "Your free trial has ended" : "Your licence has ended"}</h1>
+        <p className="mt-3 text-muted">
+          Add a licence key to see your dashboards, alerts and reports again. The cameras keep counting in the
+          meantime, so nothing is lost.
+        </p>
+        <Link href={`/app/orgs/${orgId}/licence`}
+          className="mt-6 inline-flex h-10 items-center rounded-[var(--radius-s)] bg-accent px-4 font-medium text-accent-ink no-underline hover:bg-accent/85">
+          Add a licence key
+        </Link>
+      </div>
+    );
+  }
   return (
     <div className="max-w-[560px] py-10" data-testid="plan-gate">
       <h1 className="text-2xl font-semibold">{brief!.state === "expired" ? "Your free trial has ended" : "Your subscription has ended"}</h1>

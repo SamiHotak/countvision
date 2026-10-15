@@ -245,3 +245,15 @@ class StripeEvent(Base):
     org_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"))
     received_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"), index=True)
     error: Mapped[str | None] = mapped_column(String(300))
+
+
+class AppSetting(Base):
+    """Installation-wide settings as key -> JSON (the local edition: licence, install date,
+    highest clock time seen). The cloud edition does not use it yet."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
+    updated_at: Mapped[datetime] = mapped_column(
+        default=utcnow, onupdate=utcnow, server_default=text("now()"))

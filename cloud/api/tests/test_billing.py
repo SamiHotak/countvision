@@ -103,7 +103,7 @@ def test_trial_and_camera_limit(stripe, client, app):
     assert [p["id"] for p in info["plans"]] == ["starter", "shop", "business"]
     brief = client.get(f"/api/orgs/{org['id']}").json()["billing"]
     assert brief == {"enabled": True, "state": "trial", "active": True, "plan": "trial",
-                     "plan_name": "Free trial", "trial_days_left": 14}
+                     "plan_name": "Free trial", "trial_days_left": 14, "kind": "stripe"}
 
     site = make_site(client, org["id"])
     dev, _ = pair(app, new_code(client, org["id"], site["id"])["code"])

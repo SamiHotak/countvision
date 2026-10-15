@@ -41,7 +41,7 @@ def cameras_in_use(db: Session, org_id: uuid.UUID) -> list[Camera]:
         db.scalars(
             select(Camera)
             .join(Device, Device.id == Camera.device_id)
-            .where(Camera.org_id == org_id, Device.revoked_at.is_(None))
+            .where(Camera.org_id == org_id, Device.revoked_at.is_(None), Camera.removed_at.is_(None))
             .order_by(Camera.created_at, Camera.id)
         )
     )
@@ -93,6 +93,8 @@ def refresh_paused(db: Session, org_id: uuid.UUID) -> list[Camera]:
         )
         for device_id in {c.device_id for c in changed}:
             live.queue(db, org_id, {"type": "refresh", "device_id": str(device_id)})
+            if any(c.device.manages_cameras for c in changed if c.device_id == device_id):
+                live.queue_bump(db, device_id)  # paused cameras are not sent to the device at all
     return changed
 
 

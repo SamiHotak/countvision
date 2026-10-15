@@ -330,6 +330,10 @@ class CloudConfig(_Model):
     config_sync:        accept lines/zones/classes/schedules drawn in the cloud web app (applied
                         within seconds, saved in <data_dir>/cloud_config.json). Set false to
                         keep the YAML config in charge.
+    manage_cameras:     cameras are added and removed in the web app (CountVision Local's
+                        built-in agent): the agent starts and stops them while it runs, and keeps
+                        the list in cloud_config.json for the next start. ``cameras:`` may then
+                        be empty.
     """
 
     enabled: bool = True
@@ -338,6 +342,7 @@ class CloudConfig(_Model):
     batch_rows: int = Field(1000, ge=10, le=5000)
     timeout_s: float = Field(20.0, gt=0)
     config_sync: bool = True
+    manage_cameras: bool = False
 
 
 class StorageConfig(_Model):
@@ -357,10 +362,12 @@ class EdgeConfig(_Model):
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     alerts: AlertsConfig = Field(default_factory=AlertsConfig)
     cloud: CloudConfig = Field(default_factory=CloudConfig)
-    cameras: list[CameraConfig] = Field(min_length=1)
+    cameras: list[CameraConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _unique_cameras(self) -> EdgeConfig:
+        if not self.cameras and not self.cloud.manage_cameras:
+            raise ValueError("cameras: add at least one camera (or set cloud.manage_cameras: true)")
         ids = [camera.id for camera in self.cameras]
         if len(set(ids)) != len(ids):
             raise ValueError("camera ids must be unique")
@@ -378,6 +385,9 @@ class EdgeConfig(_Model):
     def camera(self, camera_id: str | None = None) -> CameraConfig:
         """Return one camera. With no id, the config must contain exactly one camera."""
         if camera_id is None:
+            if not self.cameras:
+                raise ConfigError("The config has no cameras (they are added in the web app: "
+                                  "cloud.manage_cameras). Use 'countvision-edge run'.")
             if len(self.cameras) != 1:
                 ids = ", ".join(c.id for c in self.cameras)
                 raise ConfigError(

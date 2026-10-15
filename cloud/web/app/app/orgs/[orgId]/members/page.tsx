@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { PageTitle } from "@/components/app-shell";
+import { useIsLocal } from "@/components/edition";
 import { Loading, useMe } from "@/components/me";
 import { OrgGate } from "@/components/org-gate";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,29 @@ function assignable(myRole: Role): Role[] {
   return ROLES.filter((r) => (myRole === "owner" ? true : roleRank(r) <= roleRank(myRole) && r !== "owner"));
 }
 
+/** CountVision Local has no mail server: the invitation link is shown once, the admin hands it over. */
+function InviteLink({ email, link }: { email: string; link: string }) {
+  const [copied, setCopied] = React.useState(false);
+  return (
+    <div className="space-y-3" data-testid="invite-link-box">
+      <p className="text-muted">Give this link to {email}. It works for 7 days, only for this email address, and is shown only now.</p>
+      <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} aria-label="Invitation link"
+        className="h-10 w-full rounded-[var(--radius-s)] border border-rule bg-ink px-3 font-mono text-sm text-text"
+        data-testid="invite-link" />
+      <Button type="button" variant="secondary" size="sm" onClick={() => {
+        void navigator.clipboard?.writeText(link).then(() => setCopied(true)).catch(() => undefined);
+      }}>{copied ? "Copied" : "Copy link"}</Button>
+      <p className="text-sm text-faint">
+        On this computer the link starts with localhost. On another device in your network, replace
+        &quot;localhost&quot; with this computer&apos;s name or IP address (if network access is on).
+      </p>
+    </div>
+  );
+}
+
 function InviteDialog({ org, open, onClose, onSent }: { org: Org; open: boolean; onClose: () => void; onSent: (email: string) => void }) {
+  const local = useIsLocal();
+  const [link, setLink] = React.useState<{ email: string; link: string } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [fields, setFields] = React.useState<Record<string, string>>({});
   const [busy, setBusy] = React.useState(false);
@@ -40,6 +63,7 @@ function InviteDialog({ org, open, onClose, onSent }: { org: Org; open: boolean;
       setError(null);
       setFields({});
       setRole("member");
+      setLink(null);
     }
   }, [open]);
 
@@ -50,8 +74,9 @@ function InviteDialog({ org, open, onClose, onSent }: { org: Org; open: boolean;
     setError(null);
     setFields({});
     try {
-      await api.post<Invite>(`/api/orgs/${org.id}/invites`, { email, role });
-      onSent(email.trim().toLowerCase());
+      const inv = await api.post<Invite>(`/api/orgs/${org.id}/invites`, { email, role });
+      if (inv.link) setLink({ email: inv.email, link: inv.link }); // local edition: show it once
+      else onSent(email.trim().toLowerCase());
     } catch (err) {
       setError(errorText(err));
       setFields(fieldErrors(err));
@@ -61,7 +86,13 @@ function InviteDialog({ org, open, onClose, onSent }: { org: Org; open: boolean;
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title={`Invite to ${org.name}`}>
+    <Dialog open={open} onClose={link ? () => onSent(link.email) : onClose} title={`Invite to ${org.name}`}>
+      {link ? (
+        <div className="space-y-4">
+          <InviteLink email={link.email} link={link.link} />
+          <div className="flex justify-end"><Button onClick={() => onSent(link.email)}>Done</Button></div>
+        </div>
+      ) : (
       <form onSubmit={submit} className="space-y-4" noValidate>
         {error && !fields.email ? <Notice tone="error">{error}</Notice> : null}
         <Field label="Email address" name="email" type="email" required autoFocus placeholder="name@example.com"
@@ -75,12 +106,16 @@ function InviteDialog({ org, open, onClose, onSent }: { org: Org; open: boolean;
           </Select>
           <p className="text-sm text-faint">{ROLE_HELP[role]}.</p>
         </div>
-        <p className="text-sm text-muted">We email a link that works for 7 days. Only this address can use it.</p>
+        <p className="text-sm text-muted">
+          {local ? "You get a link to give to the person. It works for 7 days, only for this address."
+            : "We email a link that works for 7 days. Only this address can use it."}
+        </p>
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" busy={busy}>Send invitation</Button>
+          <Button type="submit" busy={busy}>{local ? "Create invitation link" : "Send invitation"}</Button>
         </div>
       </form>
+      )}
     </Dialog>
   );
 }
@@ -158,6 +193,8 @@ function MembersView({ org, reloadOrg }: { org: Org; reloadOrg: () => Promise<vo
   const [invites, setInvites] = React.useState<Invite[]>([]);
   const [notice, setNotice] = React.useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [inviteOpen, setInviteOpen] = React.useState(false);
+  const [freshLink, setFreshLink] = React.useState<{ email: string; link: string } | null>(null);
+  const local = useIsLocal();
 
   const load = React.useCallback(async () => {
     try {
@@ -193,7 +230,12 @@ function MembersView({ org, reloadOrg }: { org: Org; reloadOrg: () => Promise<vo
 
   async function resend(inv: Invite) {
     try {
-      await api.post(`/api/orgs/${org.id}/invites`, { email: inv.email, role: inv.role });
+      const out = await api.post<Invite>(`/api/orgs/${org.id}/invites`, { email: inv.email, role: inv.role });
+      if (out.link) {
+        setFreshLink({ email: inv.email, link: out.link });
+        await changed(`New link for ${inv.email}. The old link no longer works.`);
+        return;
+      }
       await changed(`A new link was sent to ${inv.email}. The old link no longer works.`);
     } catch (e) {
       failed(errorText(e));
@@ -255,7 +297,7 @@ function MembersView({ org, reloadOrg }: { org: Org; reloadOrg: () => Promise<vo
                     </p>
                   </div>
                   <RoleBadge role={inv.role} />
-                  <Button size="sm" variant="secondary" onClick={() => void resend(inv)}>Send again</Button>
+                  <Button size="sm" variant="secondary" onClick={() => void resend(inv)}>{local ? "New link" : "Send again"}</Button>
                   <Button size="sm" variant="ghost" onClick={() => void revoke(inv)} aria-label={`Cancel invitation for ${inv.email}`}>Cancel</Button>
                 </li>
               ))}
@@ -274,9 +316,15 @@ function MembersView({ org, reloadOrg }: { org: Org; reloadOrg: () => Promise<vo
         onClose={() => setInviteOpen(false)}
         onSent={(email) => {
           setInviteOpen(false);
-          void changed(`Invitation sent to ${email}.`);
+          void changed(local ? `Invitation for ${email} created.` : `Invitation sent to ${email}.`);
         }}
       />
+      {freshLink ? (
+        <Dialog open onClose={() => setFreshLink(null)} title="New invitation link">
+          <InviteLink email={freshLink.email} link={freshLink.link} />
+          <div className="mt-4 flex justify-end"><Button onClick={() => setFreshLink(null)}>Done</Button></div>
+        </Dialog>
+      ) : null}
     </>
   );
 }

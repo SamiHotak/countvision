@@ -41,6 +41,11 @@ def queue(db: Session, org_id: uuid.UUID, message: dict[str, Any]) -> None:
     db.info.setdefault(_OUTBOX, []).append((str(org_id), message))
 
 
+def queue_bump(db: Session, device_id: uuid.UUID) -> None:
+    """Bump the device's revision AFTER the commit (its next poll must see the new state)."""
+    db.info.setdefault(_OUTBOX, []).append((None, {"bump": str(device_id)}))
+
+
 def publish(org_id: uuid.UUID | str, message: dict[str, Any]) -> None:
     try:
         get_redis().publish(org_channel(org_id), json.dumps(message, default=str, separators=(",", ":")))
@@ -60,7 +65,13 @@ def bump_device(device_id: uuid.UUID | str) -> int:
 def _after_commit(session: Session) -> None:
     if session.in_nested_transaction():  # a savepoint ended (begin_nested): wait for the real commit
         return
+    bumped: set[str] = set()
     for org_id, message in session.info.pop(_OUTBOX, []):
+        if org_id is None:
+            if message["bump"] not in bumped:
+                bumped.add(message["bump"])
+                bump_device(message["bump"])
+            continue
         publish(org_id, message)
 
 

@@ -17,6 +17,9 @@
 * When paired with the cloud: the uploader sends the numbers, and ConfigSync (cloud_sync.py)
   receives lines/zones/classes/schedules drawn in the web app and applies them to the running
   camera within seconds. Snapshot requests get ONE pixelated, scaled-down JPEG.
+* ``cloud.manage_cameras`` (CountVision Local): cameras are added/removed in the web app. The
+  supervisor starts and stops their workers while it runs (each worker has its own stop signal)
+  and keeps running with zero cameras.
 
 No video ever leaves a worker. status.json contains only numbers and redacted camera URLs.
 """
@@ -37,7 +40,7 @@ import cv2
 import numpy as np
 
 from . import __version__
-from .cloud_sync import ConfigSync, apply_doc, load_overlay, report_doc, save_overlay
+from .cloud_sync import ConfigSync, apply_doc, load_managed, load_overlay, report_doc, save_overlay
 from .config import CameraConfig, EdgeConfig, redact_uri
 from .detectors.base import Detector
 from .errors import CountVisionError, SourceError
@@ -266,32 +269,122 @@ class Supervisor:
         self.device_id = cfg.resolve_device_id()
         self.status_path = Path(cfg.data_dir) / STATUS_FILE
         self._overlay = load_overlay(cfg.data_dir)
-        self._config_lock = threading.Lock()
-        self.workers = []
-        for cam in (cameras if cameras is not None else cfg.cameras):
-            worker = CameraWorker(self._with_overlay(cam), cfg, self.detector, buffer, self.stop_event,
-                                  max_frames=max_frames, on_result=on_result, source_factory=source_factory)
-            saved = self._overlay.get(cam.id)
-            if saved and worker.cam is not cam:
-                worker.health.config_version = int(saved.get("version", 0))
-            self.workers.append(worker)
+        self._config_lock = threading.RLock()
+        self._max_frames = max_frames
+        self._on_result = on_result
+        self._source_factory = source_factory
         self.started_at: float | None = None
+        # The list is REPLACED (never changed in place) when cameras come and go, so other threads
+        # can loop over it safely.
+        self.workers: list[CameraWorker] = [
+            self._new_worker(cam) for cam in (cameras if cameras is not None else cfg.cameras)]
+        self.managed_mode = bool(cfg.cloud.manage_cameras)
+        self.managed: dict[str, dict] = {}  # cameras from the web app: id -> {id, name, source}
+        if self.managed_mode:
+            for spec in load_managed(cfg.data_dir).values():
+                self._add_managed(spec, start=False)
         self.uploader = None  # cloud.CloudUploader when paired (see start_uploader)
         self.config_sync: ConfigSync | None = None  # when paired (see start_config_sync)
         self._last_status: dict | None = None
 
     # -- lifecycle ----------------------------------------------------------------------
 
+    def _new_worker(self, cam: CameraConfig) -> CameraWorker:
+        worker = CameraWorker(self._with_overlay(cam), self.cfg, self.detector, self.buffer,
+                              threading.Event(), max_frames=self._max_frames, on_result=self._on_result,
+                              source_factory=self._source_factory)
+        saved = self._overlay.get(cam.id)
+        if saved and worker.cam is not cam:
+            worker.health.config_version = int(saved.get("version", 0))
+        return worker
+
     def start(self) -> None:
         self.started_at = self.clock()
         self.detector.warmup()
         for worker in self.workers:
             worker.start()
-        log.info("Supervisor: %d camera(s) started, detector %s (%s)", len(self.workers),
-                 self.detector.info.name, self.detector.info.license)
+        log.info("Supervisor: %d camera(s) started, detector %s (%s)%s", len(self.workers),
+                 self.detector.info.name, self.detector.info.license,
+                 "; cameras are managed in the web app" if self.managed_mode else "")
 
     def stop(self) -> None:
         self.stop_event.set()
+        for worker in self.workers:
+            worker.stop_event.set()
+
+    # -- cameras managed in the web app ------------------------------------------------------
+
+    @staticmethod
+    def camera_from_spec(spec: dict) -> CameraConfig:
+        """A CameraConfig for a camera added in the web app (lines etc. come with its config)."""
+        src = spec.get("source") or {}
+        return CameraConfig.model_validate({
+            "id": spec["id"], "name": spec.get("name") or spec["id"],
+            "source": {"uri": str(src.get("uri", "")), "kind": src.get("kind", "auto")},
+        })
+
+    def _add_managed(self, spec: dict, *, start: bool) -> bool:
+        try:
+            cam = self.camera_from_spec(spec)
+        except Exception as exc:  # noqa: BLE001 - one bad entry must not stop the others
+            log.error("Camera %s from the web app not started: %s", spec.get("id"), _short_error(exc))
+            return False
+        if any(w.cam.id == cam.id for w in self.workers):
+            log.warning("Camera id %s exists already (YAML); the web app's camera is ignored", cam.id)
+            return False
+        worker = self._new_worker(cam)
+        self.workers = [*self.workers, worker]
+        self.managed[cam.id] = {"id": cam.id, "name": cam.name, "source": dict(spec.get("source") or {})}
+        if start and self.started_at is not None and not self.stop_event.is_set():
+            worker.start()
+        log.info("Camera %s (%s, %s) added from the web app", cam.id, cam.name, _label(cam))
+        return True
+
+    def _remove_managed(self, camera_id: str, *, wait_s: float = 0.0) -> None:
+        worker = next((w for w in self.workers if w.cam.id == camera_id), None)
+        self.managed.pop(camera_id, None)
+        if worker is None:
+            return
+        worker.stop_event.set()
+        self.workers = [w for w in self.workers if w is not worker]
+        if wait_s and worker.is_alive():
+            worker.join(wait_s)  # the same webcam cannot be opened twice at once
+        log.info("Camera %s stopped (removed in the web app)", camera_id)
+
+    def sync_cameras(self, specs: list[dict]) -> None:
+        """Make the running cameras match the web app's list: start new, stop removed, restart a
+        camera whose address changed, rename. Saves the list for the next start."""
+        if not self.managed_mode:
+            return
+        desired = {str(s["id"]): s for s in specs if isinstance(s, dict) and s.get("id")}
+        changed = False
+        with self._config_lock:
+            for camera_id in [c for c in self.managed if c not in desired]:
+                self._remove_managed(camera_id)
+                changed = True
+            for camera_id, spec in desired.items():
+                old = self.managed.get(camera_id)
+                if old is None:
+                    changed |= self._add_managed(spec, start=True)
+                elif dict(spec.get("source") or {}) != old["source"]:
+                    log.info("Camera %s: new address, restarting it", camera_id)
+                    self._remove_managed(camera_id, wait_s=10.0)
+                    self._add_managed(spec, start=True)
+                    changed = True
+                elif spec.get("name") and spec["name"] != old["name"]:
+                    worker = next((w for w in self.workers if w.cam.id == camera_id), None)
+                    if worker is not None:
+                        worker.reconfigure(worker.cam.model_copy(update={"name": spec["name"]}))
+                        worker.health.name = spec["name"]
+                    old["name"] = spec["name"]
+                    changed = True
+            if changed:
+                try:
+                    save_overlay(self.cfg.data_dir, self._overlay, managed=list(self.managed.values()))
+                except OSError as exc:
+                    log.warning("Could not save the camera list (%s)", exc)
+        if changed:
+            self._report_now()
 
     def join(self, timeout: float | None = None) -> None:
         deadline = None if timeout is None else time.monotonic() + timeout
@@ -301,6 +394,9 @@ class Supervisor:
 
     @property
     def alive(self) -> bool:
+        """Something is still running. A supervisor with managed cameras waits even with none."""
+        if self.managed_mode and not self.stop_event.is_set():
+            return True
         return any(w.is_alive() for w in self.workers)
 
     def start_uploader(self, uploader=None) -> None:
@@ -320,7 +416,9 @@ class Supervisor:
             if creds is None or not self.cfg.cloud.config_sync:
                 return
             sync = ConfigSync(creds, apply_config=self.apply_camera_config, take_snapshot=self.snapshot,
-                              url=self.cfg.cloud.url, timeout_s=self.cfg.cloud.timeout_s)
+                              url=self.cfg.cloud.url, timeout_s=self.cfg.cloud.timeout_s,
+                              sync_cameras=self.sync_cameras if self.managed_mode else None,
+                              data_dir=self.cfg.data_dir)
         self.config_sync = sync
         sync.applied.update({w.cam.id: w.health.config_version for w in self.workers
                              if w.health.config_version})

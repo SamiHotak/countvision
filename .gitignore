@@ -51,3 +51,11 @@ cloud/web/test-results/
 cloud/web/playwright-report/
 # Redis/Valkey snapshot files from local test servers
 *.rdb
+# CountVision Local licence signing: the PRIVATE key must never be committed (the repo is public)
+*.pem
+CountVision-licence-signing/
+licence_private*
+*.cvlicence
+# backups of the local edition contain everything (password hashes, the secret key)
+*.cvbackup
+secret_key

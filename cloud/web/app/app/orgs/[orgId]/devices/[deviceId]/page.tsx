@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
+import { AddCameraDialog, ChangeSourceDialog } from "@/components/camera-source";
+import { useIsLocal } from "@/components/edition";
 import { Loading } from "@/components/me";
 import { OrgGate } from "@/components/org-gate";
 import { Button } from "@/components/ui/button";
@@ -39,12 +41,24 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 function CameraRow({ cam, org, online, onRenamed }: {
   cam: Camera; org: Org; online: boolean; onRenamed: () => void;
 }) {
+  const local = useIsLocal();
+  const [changing, setChanging] = React.useState(false);
   const h = cameraHealth(cam, online);
   const canEdit = roleRank(org.my_role) >= roleRank("member");
   // configured lines first, then lines that only have counts today (e.g. renamed)
   const lines = [...cam.lines, ...Object.keys(cam.today).filter((l) => !cam.lines.includes(l))];
   const editor = `/app/orgs/${org.id}/cameras/${cam.id}`;
   const sending = cam.desired_version > cam.applied_version;
+
+  async function removeCamera() {
+    if (!window.confirm(`Stop counting ${cam.name}? Its numbers stay in your dashboards and reports.`)) return;
+    try {
+      await api.del(`/api/orgs/${org.id}/cameras/${cam.id}`);
+      onRenamed();
+    } catch (e) {
+      window.alert(errorText(e));
+    }
+  }
 
   async function rename() {
     const name = window.prompt("Camera name", cam.name)?.trim();
@@ -74,13 +88,38 @@ function CameraRow({ cam, org, online, onRenamed }: {
           {cam.reconnects ? `, ${cam.reconnects} reconnects` : ""}
         </p>
         <p className="mt-0.5 text-sm text-faint">
-          id {cam.edge_camera_id}
+          {cam.managed ? <span data-testid="camera-source">{cam.source_label}</span> : <>id {cam.edge_camera_id}</>}
           {cam.zones.length ? `, zones: ${cam.zones.join(", ")}` : ""}
         </p>
+        {cam.managed && canEdit ? (
+          <p className="mt-1 flex gap-4 text-sm">
+            {cam.source_kind !== "webcam" ? (
+              <button className="cursor-pointer text-faint hover:text-text" onClick={() => setChanging(true)}>
+                Change address
+              </button>
+            ) : null}
+            <button className="cursor-pointer text-faint hover:text-danger" onClick={() => void removeCamera()}
+              data-testid="remove-camera">Remove camera</button>
+          </p>
+        ) : null}
+        {changing ? (
+          <ChangeSourceDialog orgId={org.id} cam={cam} open={changing} onClose={() => setChanging(false)}
+            onSaved={() => { setChanging(false); onRenamed(); }} />
+        ) : null}
         {cam.plan_paused ? (
           <p className="mt-1 text-sm text-muted" data-testid="camera-plan-paused">
-            The plan has no free camera slot, so this camera&apos;s numbers are not stored.{" "}
-            <Link href={`/app/orgs/${org.id}/billing`} className="text-accent">Upgrade the plan</Link> or remove another device.
+            {local ? (
+              <>
+                The licence has no free camera slot, so this camera is not counted.{" "}
+                <Link href={`/app/orgs/${org.id}/licence`} className="text-accent">Add a bigger licence</Link> or remove
+                another camera.
+              </>
+            ) : (
+              <>
+                The plan has no free camera slot, so this camera&apos;s numbers are not stored.{" "}
+                <Link href={`/app/orgs/${org.id}/billing`} className="text-accent">Upgrade the plan</Link> or remove another device.
+              </>
+            )}
           </p>
         ) : null}
         {sending && cam.config_error ? (
@@ -173,6 +212,7 @@ function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
   const [error, setError] = React.useState<{ text: string; missing: boolean } | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState(false);
+  const [adding, setAdding] = React.useState(false);
   const isAdmin = roleRank(org.my_role) >= roleRank("admin");
   const canEdit = roleRank(org.my_role) >= roleRank("member");
 
@@ -268,7 +308,7 @@ function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
         </span>
         <span className="ml-auto flex gap-2">
           {canEdit && !d.revoked ? <Button variant="secondary" onClick={() => setEditing(true)}>Edit</Button> : null}
-          {isAdmin && !d.revoked ? <Button variant="danger" onClick={() => void revoke()}>Remove device</Button> : null}
+          {isAdmin && !d.revoked && !d.builtin ? <Button variant="danger" onClick={() => void revoke()}>Remove device</Button> : null}
           {isAdmin && d.revoked ? <Button variant="danger" onClick={() => void remove()}>Delete device and data</Button> : null}
         </span>
       </div>
@@ -276,6 +316,11 @@ function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
       {d.revoked ? (
         <Notice tone="warn" className="mb-5">
           This device was removed. It can no longer send data. Its numbers are kept.
+        </Notice>
+      ) : !d.online && d.builtin ? (
+        <Notice tone="warn" className="mb-5" data-testid="builtin-offline">
+          The counting service on this computer is not running{d.last_seen_at ? ` (last contact ${timeAgo(d.last_seen_at)})` : ""}.
+          It starts together with CountVision. If it does not come back, restart CountVision or the computer.
         </Notice>
       ) : !d.online && d.last_seen_at ? (
         <Notice tone="warn" className="mb-5">
@@ -306,8 +351,18 @@ function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
           <span className="flex items-center gap-2 text-sm text-faint" data-testid="live-state">
             <StatusDot health={live === "live" ? "ok" : "idle"} /> {liveLabel(live)}
           </span>
+          {d.manages_cameras && canEdit && !d.revoked ? (
+            <Button size="sm" onClick={() => setAdding(true)} data-testid="add-camera">Add camera</Button>
+          ) : null}
         </PanelHead>
-        {d.cameras.length === 0 ? (
+        {d.cameras.length === 0 && d.manages_cameras ? (
+          <div className="px-5 py-6">
+            <p className="max-w-[60ch] text-muted">
+              No camera yet. Add this computer&apos;s webcam, an IP camera in your network, or a phone as a camera.
+            </p>
+            {canEdit ? <Button className="mt-4" onClick={() => setAdding(true)}>Add your first camera</Button> : null}
+          </div>
+        ) : d.cameras.length === 0 ? (
           <p className="px-5 py-6 text-muted">
             No camera reported yet. Cameras appear here after the device&apos;s first upload (within 15 seconds
             after the counting service starts).
@@ -321,6 +376,10 @@ function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
         )}
       </Panel>
 
+      {d.manages_cameras ? (
+        <AddCameraDialog orgId={org.id} device={d} open={adding} onClose={() => setAdding(false)}
+          onAdded={() => { setAdding(false); void load(); }} />
+      ) : null}
       <EditDialog org={org} device={d} sites={sites} open={editing} onClose={() => setEditing(false)}
         onSaved={() => { setEditing(false); void load(); }} />
     </>

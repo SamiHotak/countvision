@@ -7,6 +7,9 @@ How it works:
   lines with the same name are kept) and saved in <data_dir>/cloud_config.json. At the next
   start that file is applied over the YAML config, so the cloud's version stays in force.
   The version is reported back with the next upload (a few seconds later).
+* Managed cameras (``cloud.manage_cameras``, CountVision Local): every answer carries the full list
+  of cameras added in the web app ({id, name, source}); the supervisor starts new ones, stops removed
+  ones and restarts a camera whose address changed. The list is saved in the same file.
 * A snapshot request: the newest frame is copied, every detected person/vehicle is pixelated,
   the picture is scaled to max 960 px wide and sent ONCE as JPEG. Nothing is stored here.
   ``privacy.snapshots: false`` in the config refuses all snapshot requests.
@@ -17,16 +20,18 @@ is converted when the cloud config is applied.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
+import stat
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .cloud import CloudError, Credentials, normalize_url, request_json
+from .cloud import CloudError, Credentials, normalize_url, reload_credentials, request_json
 from .config import CameraConfig
 from .inputs.live_source import Backoff
 
@@ -56,11 +61,34 @@ def load_overlay(data_dir: str | Path) -> dict[str, dict[str, Any]]:
         return {}
 
 
-def save_overlay(data_dir: str | Path, cameras: dict[str, dict[str, Any]]) -> None:
+def load_managed(data_dir: str | Path) -> dict[str, dict[str, Any]]:
+    """{camera id: {"id", "name", "source": {"kind", "uri"}}}: cameras added in the web app
+    (cloud.manage_cameras), saved so they start again after a restart even before the cloud answers."""
+    path = overlay_path(data_dir)
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {str(c["id"]): c for c in data.get("managed", []) if isinstance(c, dict) and c.get("id")}
+    except (OSError, ValueError, KeyError) as exc:
+        log.warning("Ignoring damaged managed camera list in %s (%s)", path, exc)
+        return {}
+
+
+_KEEP = object()
+
+
+def save_overlay(data_dir: str | Path, cameras: dict[str, dict[str, Any]], managed: Any = _KEEP) -> None:
+    """Write configs (and the managed camera list; left out = keep what the file has)."""
     path = overlay_path(data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if managed is _KEEP:
+        managed = list(load_managed(data_dir).values())
     tmp = path.with_name(f".{OVERLAY_FILE}.tmp")
-    tmp.write_text(json.dumps({"cameras": cameras, "saved": time.time()}, indent=2), encoding="utf-8")
+    body = {"cameras": cameras, "managed": managed, "saved": time.time()}
+    tmp.write_text(json.dumps(body, indent=2), encoding="utf-8")
+    with contextlib.suppress(OSError):  # it holds camera addresses (maybe with a password)
+        os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
     os.replace(tmp, path)
 
 
@@ -142,9 +170,13 @@ class ConfigSync(threading.Thread):
         timeout_s: float = 20.0,
         http: Callable[..., dict] = request_json,
         send_snapshot: Callable[[str, bytes | None, str | None], None] | None = None,
+        sync_cameras: Callable[[list[dict]], None] | None = None,
+        data_dir: str | Path | None = None,
     ) -> None:
         super().__init__(name="cloud-config", daemon=True)
         self.creds = creds
+        self.sync_cameras = sync_cameras  # cloud.manage_cameras: start/stop cameras from the web app
+        self.data_dir = data_dir
         self.url = normalize_url(url or creds.url)
         self.apply_config = apply_config
         self.take_snapshot = take_snapshot
@@ -166,6 +198,8 @@ class ConfigSync(threading.Thread):
         self.rev = int(answer.get("rev", self.rev))
         if not answer.get("changed"):
             return False
+        if self.sync_cameras is not None and isinstance(answer.get("managed"), list):
+            self.sync_cameras(answer["managed"])  # first: a config below may be for a new camera
         for cam in answer.get("cameras", []):
             version = int(cam.get("version", 0))
             if self.applied.get(cam["id"]) == version:
@@ -214,6 +248,12 @@ class ConfigSync(threading.Thread):
                 self._backoff.reset()
             except CloudError as exc:
                 self.last_error = str(exc)
+                fresh = reload_credentials(self.data_dir, self.creds) if exc.status == 401 else None
+                if fresh is not None:  # a renewed token (local edition): go on with it
+                    self.creds, self.state, self.rev = fresh, "starting", -1
+                    log.info("Cloud config sync: using the new device token")
+                    self.stop_event.wait(1.0)
+                    continue
                 if exc.status == 401:
                     self.state = "revoked"
                     log.error("Cloud config sync stopped: %s", exc)

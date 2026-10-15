@@ -1,0 +1,6 @@
+# Same rules as cloud/api/pyproject.toml; long lines are fine in tests (like tests/).
+extend = "../pyproject.toml"
+src = [".."]
+
+[lint.per-file-ignores]
+"*" = ["E501"]

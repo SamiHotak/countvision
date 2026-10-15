@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import { AuthShell } from "@/components/auth-shell";
+import { useEdition } from "@/components/edition";
 import { GoogleButton } from "@/components/google-button";
 import { useMe } from "@/components/me";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,11 @@ function LoginForm() {
   const { setMe } = useMe();
   const [error, setError] = React.useState<string | null>(params.get("error"));
   const [busy, setBusy] = React.useState(false);
+  const { edition, loaded } = useEdition();
+  const local = edition.edition === "local";
+  React.useEffect(() => {
+    if (loaded && edition.needs_setup) router.replace("/setup"); // CountVision Local, first start
+  }, [loaded, edition.needs_setup, router]);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -37,16 +43,25 @@ function LoginForm() {
   }
 
   return (
-    <AuthShell title="Log in" intro={<>New here? <Link href={`/signup?next=${encodeURIComponent(next)}`} className="text-accent">Create an account</Link></>}>
+    <AuthShell title="Log in" intro={local
+      ? <>CountVision Local on this computer. New team members get an invitation link from the owner.</>
+      : <>New here? <Link href={`/signup?next=${encodeURIComponent(next)}`} className="text-accent">Create an account</Link></>}>
       <GoogleButton next={next} />
       <form onSubmit={submit} className="space-y-4" noValidate>
         {error ? <Notice tone="error">{error}</Notice> : null}
         <Field label="Email" name="email" type="email" autoComplete="email" required autoFocus />
         <Field label="Password" name="password" type="password" autoComplete="current-password" required />
         <Button type="submit" size="lg" className="w-full" busy={busy}>Log in</Button>
-        <p className="text-sm">
-          <Link href="/forgot-password" className="text-muted hover:text-text">Forgot your password?</Link>
-        </p>
+        {edition.email ? (
+          <p className="text-sm">
+            <Link href="/forgot-password" className="text-muted hover:text-text">Forgot your password?</Link>
+          </p>
+        ) : (
+          <p className="text-sm text-faint" data-testid="no-email-reset">
+            Forgot your password? The owner can invite you again. The owner&apos;s own password is reset with
+            the CountVision tools on this computer.
+          </p>
+        )}
       </form>
     </AuthShell>
   );

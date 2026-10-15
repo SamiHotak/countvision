@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     PrimaryKeyConstraint,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -85,6 +86,11 @@ class Device(Base):
     last_data_at: Mapped[datetime | None]  # newest counting data received (edge time)
     revoked_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow, server_default=text("now()"))
+    # Cameras are added and removed in the web app (sources stored here, sent to the device with its
+    # poll) instead of the device's YAML file. The local edition's built-in device works like this.
+    manages_cameras: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # The edge agent on the same PC as the local edition (paired automatically, not removable).
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
     site: Mapped[Site] = relationship(back_populates="devices")
     cameras: Mapped[list[Camera]] = relationship(back_populates="device", order_by="Camera.edge_camera_id")
@@ -124,6 +130,14 @@ class Camera(Base):
     # More cameras than the plan allows: the newest ones are paused (their numbers are not stored
     # until the plan is upgraded or another camera is removed). See services/plan_limits.py.
     plan_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # Camera added in the web app (device.manages_cameras): where the picture comes from.
+    # source_kind webcam | rtsp | http; the address (it may contain a password) is encrypted with
+    # CV_SECRET_KEY; source_label is the address without the password, for the page.
+    source_kind: Mapped[str | None] = mapped_column(String(16))
+    source_secret: Mapped[str | None] = mapped_column(Text)
+    source_label: Mapped[str | None] = mapped_column(String(300))
+    # Removed in the web app: the device stops it, its numbers stay in the dashboards.
+    removed_at: Mapped[datetime | None]
 
     device: Mapped[Device] = relationship(back_populates="cameras")
 

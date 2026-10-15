@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ...db import get_db, utcnow
+from ...settings import get_settings
 from ..deps import OrgContext, current_user, org_access
 from ..models import Organization, Role, User
 from ..repositories import orgs as org_repo
@@ -41,7 +42,8 @@ def billing_brief(db: Session, org_id) -> dict:
     if ent.state == "trial" and ent.trial_ends_at:
         days_left = max(0, -(-int((ent.trial_ends_at - utcnow()).total_seconds()) // 86400))
     return {"enabled": ent.state != "off", "state": ent.state, "active": ent.active, "plan": ent.plan.id,
-            "plan_name": ent.plan.name, "trial_days_left": days_left}
+            "plan_name": ent.plan.name, "trial_days_left": days_left,
+            "kind": "licence" if get_settings().is_local else "stripe"}
 
 
 @router.get("", response_model=list[OrgOut])
@@ -51,6 +53,10 @@ def list_orgs(user: User = Depends(current_user), db: Session = Depends(get_db))
 
 @router.post("", response_model=OrgOut, status_code=201)
 def create_org(body: OrgIn, user: User = Depends(current_user), db: Session = Depends(get_db)) -> OrgOut:
+    if get_settings().is_local:
+        from ...local import setup
+
+        setup.check_can_create_org(db)
     org = orgs.create_org(db, user, body.name)
     db.commit()
     return org_out(db, org, Role.OWNER)
@@ -130,9 +136,15 @@ def create_invite(body: InviteIn, ctx: OrgContext = Depends(org_access(Role.ADMI
                   db: Session = Depends(get_db)) -> InviteOut:
     """Send an invitation email. Inviting the same address again sends a new link."""
     inv = invites.create(db, ctx.org, ctx.user, ctx.membership, body.email, body.role)
+    link = getattr(inv, "link", None)
     db.commit()
     db.refresh(inv)
-    return invite_out(inv)
+    out = invite_out(inv)
+    if get_settings().is_local:
+        # CountVision Local usually has no mail server: the admin copies the link (shown once) and
+        # gives it to the person. Opened on this PC or in the shop network, it works like the email.
+        out.link = link
+    return out
 
 
 @router.delete("/{org_id}/invites/{invite_id}", response_model=OkOut)

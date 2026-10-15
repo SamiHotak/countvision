@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { PageTitle } from "@/components/app-shell";
+import { useIsLocal } from "@/components/edition";
 import { OrgGate } from "@/components/org-gate";
 import { HourSpark } from "@/components/charts";
 import { Button } from "@/components/ui/button";
@@ -104,6 +105,8 @@ function Overview({ org }: { org: Org }) {
   const camsOn = active.reduce((n, d) => n + d.cameras_online, 0);
   const ready = sites !== null && devices !== null;
   const base = `/app/orgs/${org.id}`;
+  const local = useIsLocal();
+  const builtin = active.find((d) => d.builtin);
 
   return (
     <>
@@ -131,7 +134,21 @@ function Overview({ org }: { org: Org }) {
         </Panel>
       ) : null}
 
-      {ready && isAdmin && !hasSample && active.length === 0 ? (
+      {ready && local && builtin && cams === 0 ? (
+        <Panel className="mt-6 p-5 sm:p-6" data-testid="local-first-camera">
+          <h2 className="text-lg font-semibold">Add your first camera</h2>
+          <p className="mt-2 max-w-[60ch] text-muted">
+            This computer&apos;s webcam, an IP camera in your network, or a phone as a camera. It starts counting
+            within seconds; then you draw the counting line on its picture.
+          </p>
+          <Link href={`${base}/devices/${builtin.id}`}
+            className="mt-4 inline-flex h-10 items-center rounded-[var(--radius-s)] bg-accent px-4 font-medium text-accent-ink no-underline hover:bg-accent/85">
+            Add a camera
+          </Link>
+        </Panel>
+      ) : null}
+
+      {ready && isAdmin && !hasSample && (active.length === 0 || (local && cams === 0)) ? (
         <Panel className="mt-6 flex flex-wrap items-center gap-4 p-5 sm:p-6">
           <p className="mr-auto max-w-[56ch] text-muted">
             No camera yet? Look around with a sample café: five weeks of invented numbers, dashboards and a PDF report.
@@ -140,7 +157,7 @@ function Overview({ org }: { org: Org }) {
         </Panel>
       ) : null}
 
-      {ready && active.length === 0 ? (
+      {ready && active.length === 0 && !local ? (
         <Panel className="mt-6 p-5 sm:p-6">
           <h2 className="text-lg font-semibold">Get your first camera counting</h2>
           <ol className="mt-4 space-y-3">

@@ -180,10 +180,12 @@ class CloudUploader(threading.Thread):
         timeout_s: float = 20.0,
         status_fn: Callable[[], dict] | None = None,
         send: Callable[[dict], dict] | None = None,
+        data_dir: str | Path | None = None,
     ) -> None:
         super().__init__(name="cloud-uploader", daemon=True)
         self.buffer = buffer
         self.creds = creds
+        self.data_dir = data_dir  # where cloud.json lives: re-read after a 401 (a renewed token)
         self.url = normalize_url(url or creds.url)
         self.interval_s = interval_s
         self.batch_rows = batch_rows
@@ -313,6 +315,9 @@ class CloudUploader(threading.Thread):
     def _on_error(self, exc: CloudError) -> float | None:
         """Decide what to do after an error. None = stop uploading."""
         self.state.last_error = str(exc)
+        if exc.status == 401 and self._reload_credentials():
+            self.state.state = "starting"
+            return 1.0
         if exc.status == 401:
             self.state.state = "revoked"
             log.error("Cloud: %s Counting continues locally. Pair again with: countvision-edge pair", exc)
@@ -325,6 +330,15 @@ class CloudUploader(threading.Thread):
             log.warning("Cloud not reachable: %s. Counting continues; data is kept and sent later.", exc)
         self.state.state = "offline"
         return self._backoff.next_delay()
+
+    def _reload_credentials(self) -> bool:
+        """The local edition writes a new token into cloud.json (restore, reinstall). True = use it."""
+        fresh = reload_credentials(self.data_dir, self.creds)
+        if fresh is None:
+            return False
+        self.creds = fresh
+        log.info("Cloud: using the new device token from %s", Credentials.path(self.data_dir or "."))
+        return True
 
     def stop(self) -> None:
         self.stop_event.set()
@@ -344,6 +358,19 @@ class CloudUploader(threading.Thread):
         return False
 
 
+def reload_credentials(data_dir: str | Path | None, current: Credentials) -> Credentials | None:
+    """cloud.json again; returns it only when it holds a different token than ``current``."""
+    if data_dir is None:
+        return None
+    try:
+        fresh = Credentials.load(data_dir)
+    except CountVisionError:
+        return None
+    if fresh is None or fresh.token == current.token:
+        return None
+    return fresh
+
+
 def _clean(row: dict) -> dict:
     return {k: v for k, v in row.items() if k not in _DROP}
 
@@ -359,4 +386,5 @@ def make_uploader(cfg, buffer: SqliteBuffer, status_fn: Callable[[], dict]) -> C
                  "countvision-edge pair --url <cloud address> --code <code>", Credentials.path(cfg.data_dir))
         return None
     return CloudUploader(buffer, creds, url=cfg.cloud.url, interval_s=cfg.cloud.upload_interval_s,
-                         batch_rows=cfg.cloud.batch_rows, timeout_s=cfg.cloud.timeout_s, status_fn=status_fn)
+                         batch_rows=cfg.cloud.batch_rows, timeout_s=cfg.cloud.timeout_s, status_fn=status_fn,
+                         data_dir=cfg.data_dir)

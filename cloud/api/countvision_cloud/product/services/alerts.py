@@ -140,7 +140,7 @@ def check_offline(db: Session, rule: AlertRule, now: datetime) -> Check:
     stmt = (
         select(Camera, Device)
         .join(Device, Device.id == Camera.device_id)
-        .where(Device.site_id == site.id, Device.revoked_at.is_(None))
+        .where(Device.site_id == site.id, Device.revoked_at.is_(None), Camera.removed_at.is_(None))
     )
     if rule.camera_id:
         stmt = stmt.where(Camera.id == rule.camera_id)
@@ -417,7 +417,7 @@ def _validate(db: Session, org: Organization, data: dict[str, Any], site: Site) 
     )
     if set(ids) - found:
         raise AppError("Unknown channel.", code="bad_channel", status=422)
-    if not ids:
+    if not ids and not get_settings().is_local:  # local edition: on screen (the bell) is enough
         raise AppError(
             "Choose where the alert goes (at least one channel).",
             code="no_channel",

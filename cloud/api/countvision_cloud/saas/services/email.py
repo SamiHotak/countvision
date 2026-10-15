@@ -171,6 +171,9 @@ def _after_rollback(session: Session) -> None:
 def dispatch(mail: Mail) -> None:
     """Hand the mail to the worker, or send it now."""
     settings = get_settings()
+    if settings.email_backend == "off":
+        log.info("Email to %s not sent (email is off: no mail server set up): %s", mail.to, mail.subject)
+        return
     if settings.email_delivery == "celery":
         from ...tasks import send_email  # local import: avoid a cycle at import time
 
@@ -179,12 +182,26 @@ def dispatch(mail: Mail) -> None:
             return
         except Exception:  # broker down: better to try directly than to lose the mail
             log.exception("Could not queue email, sending directly")
+    if settings.email_delivery == "thread":
+        from ...local import background
+
+        background.submit(_deliver_logged, mail)
+        return
     deliver(mail)
+
+
+def _deliver_logged(mail: Mail) -> None:
+    try:
+        deliver(mail)
+    except Exception:
+        log.exception("Sending the email to %s failed", mail.to)
 
 
 def deliver(mail: Mail) -> None:
     """Really send the email with the configured backend."""
     settings = get_settings()
+    if settings.email_backend == "off":
+        return
     if settings.email_backend == "memory":
         SENT.append(mail)
         return

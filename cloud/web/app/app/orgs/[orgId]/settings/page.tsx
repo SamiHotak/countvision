@@ -4,6 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { PageTitle } from "@/components/app-shell";
+import { Backups } from "@/components/backups";
+import { useIsLocal } from "@/components/edition";
 import { Loading, useMe } from "@/components/me";
 import { OrgGate } from "@/components/org-gate";
 import { Button } from "@/components/ui/button";
@@ -41,6 +43,17 @@ function describe(e: AuditEntry): string {
     case "admin.trial_extended": return `CountVision extended the free trial by ${m.days} days`;
     case "camera.plan_paused": return `camera "${m.name}" paused: the plan allows ${m.limit} cameras`;
     case "camera.plan_resumed": return `camera "${m.name}" counts again`;
+    case "camera.added": return `added the camera "${m.name}" (${m.source})`;
+    case "camera.removed": return `removed the camera "${m.name}"`;
+    case "camera.source_changed": return `changed the address of the camera "${m.name}"`;
+    case "camera.config_saved": return `saved the lines of the camera "${m.camera}" (version ${m.version})`;
+    case "camera.snapshot_requested": return `took a test picture of the camera "${m.camera}"`;
+    case "local.setup_done": return "set up CountVision Local";
+    case "licence.added": return `added a licence for ${m.cameras} cameras (${m.customer})`;
+    case "licence.removed": return "removed the licence";
+    case "backup.created": return `made a backup (${m.name})`;
+    case "backup.restored": return `restored the backup ${m.name}`;
+    case "device.token_renewed": return `renewed the key of the device "${m.name}"`;
     default: return e.action;
   }
 }
@@ -166,36 +179,42 @@ function DeleteOrg({ org }: { org: Org }) {
 
 export default function SettingsPage() {
   const { orgId } = useParams<{ orgId: string }>();
+  return <OrgGate orgId={orgId}>{(org, reload) => <SettingsView org={org} reload={reload} />}</OrgGate>;
+}
+
+function SettingsView({ org, reload }: { org: Org; reload: () => Promise<void> }) {
+  const local = useIsLocal();
+  const isAdmin = roleRank(org.my_role) >= roleRank("admin");
   return (
-    <OrgGate orgId={orgId}>
-      {(org, reload) => {
-        const isAdmin = roleRank(org.my_role) >= roleRank("admin");
-        return (
-          <>
-            <PageTitle title="Settings" />
-            {!isAdmin ? (
-              <Notice>Only admins and owners can change settings. Your role is {org.my_role}.</Notice>
-            ) : (
-              <div className="space-y-6">
-                <Panel>
-                  <PanelHead title="Name" />
-                  <RenameForm org={org} onSaved={reload} />
-                </Panel>
-                <Panel>
-                  <PanelHead title="Activity" />
-                  <AuditLog org={org} />
-                </Panel>
-                {org.my_role === "owner" ? (
-                  <Panel className="border-danger/40">
-                    <PanelHead title="Delete organization" />
-                    <DeleteOrg org={org} />
-                  </Panel>
-                ) : null}
-              </div>
-            )}
-          </>
-        );
-      }}
-    </OrgGate>
+    <>
+      <PageTitle title="Settings" />
+      {!isAdmin ? (
+        <Notice>Only admins and owners can change settings. Your role is {org.my_role}.</Notice>
+      ) : (
+        <div className="space-y-6">
+          <Panel>
+            <PanelHead title="Name" />
+            <RenameForm org={org} onSaved={reload} />
+          </Panel>
+          {local && org.my_role === "owner" ? (
+            <Panel>
+              <PanelHead title="Backups" />
+              <Backups org={org} />
+            </Panel>
+          ) : null}
+          <Panel>
+            <PanelHead title="Activity" />
+            <AuditLog org={org} />
+          </Panel>
+          {/* CountVision Local has exactly one business: deleting it would leave an empty installation. */}
+          {org.my_role === "owner" && !local ? (
+            <Panel className="border-danger/40">
+              <PanelHead title="Delete organization" />
+              <DeleteOrg org={org} />
+            </Panel>
+          ) : null}
+        </div>
+      )}
+    </>
   );
 }

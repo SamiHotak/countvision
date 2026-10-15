@@ -8,7 +8,8 @@ export interface PlanInfo {
   blurb: string;
 }
 
-export type BillingState = "off" | "trial" | "active" | "past_due" | "comp" | "expired" | "canceled";
+export type BillingState = "off" | "trial" | "active" | "past_due" | "comp" | "expired" | "canceled"
+  | "licence_expired"; // local edition: the licence key's end date passed
 
 export interface BillingBrief {
   enabled: boolean;
@@ -17,6 +18,26 @@ export interface BillingBrief {
   plan: string;
   plan_name: string;
   trial_days_left: number | null;
+  kind?: "stripe" | "licence"; // licence = CountVision Local
+}
+
+/** CountVision Local: the Licence page (GET /api/orgs/{id}/licence). */
+export interface LicenceInfo {
+  state: BillingState;
+  active: boolean;
+  plan: PlanInfo;
+  trial_ends_at: string | null;
+  trial_days_left: number | null;
+  trial_plan: PlanInfo;
+  licence: {
+    id: string; customer: string; cameras: number; valid_until: string | null; updates_until: string | null;
+    issued: string | null;
+  } | null;
+  licence_problem: string | null;
+  usage: Record<string, number>;
+  installed_at: string;
+  can_check: boolean;
+  message?: string;
 }
 
 export interface Billing {
@@ -48,6 +69,7 @@ export const STATE_LABEL: Record<BillingState, string> = {
   comp: "Granted",
   expired: "Trial ended",
   canceled: "Ended",
+  licence_expired: "Licence ended",
 };
 
 /** -1 = no limit. */

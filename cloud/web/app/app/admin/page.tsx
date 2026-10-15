@@ -17,7 +17,7 @@ const PLAN_IDS = [["starter", "Starter"], ["shop", "Shop"], ["business", "Busine
 
 const STATE_TONE: Record<BillingState, string> = {
   off: "text-muted", trial: "text-warn", active: "text-accent", comp: "text-accent", past_due: "text-danger",
-  expired: "text-danger", canceled: "text-danger",
+  expired: "text-danger", canceled: "text-danger", licence_expired: "text-danger",
 };
 
 function when(o: AdminOrg): string {

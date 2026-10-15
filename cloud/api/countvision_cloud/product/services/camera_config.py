@@ -176,11 +176,17 @@ def device_state(db: Session, device: Device) -> dict[str, Any]:
     cameras = [
         {"id": c.edge_camera_id, "version": c.desired_version, "config": c.desired_config, "timezone": tz}
         for c in db.scalars(select(Camera).where(Camera.device_id == device.id))
-        if c.desired_config is not None and c.desired_version > 0
+        if c.desired_config is not None and c.desired_version > 0 and c.removed_at is None
     ]
     pending = get_redis().hgetall(live.device_snaps_key(device.id))
     snaps = [{"request_id": req, "camera_id": cam} for req, cam in pending.items()]
-    return {"cameras": cameras, "snapshots": snaps}
+    state: dict[str, Any] = {"cameras": cameras, "snapshots": snaps}
+    if device.manages_cameras:
+        from . import managed_cameras
+
+        # The full list every time: the device starts what is new, stops what is missing.
+        state["managed"] = managed_cameras.device_cameras(db, device)
+    return state
 
 
 def device_rev(device_id: uuid.UUID) -> int:

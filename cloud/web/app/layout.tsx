@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 
+import { EditionProvider } from "@/components/edition";
 import { MeProvider } from "@/components/me";
 
 import "./globals.css";
@@ -17,7 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <MeProvider>{children}</MeProvider>
+        <EditionProvider>
+          <MeProvider>{children}</MeProvider>
+        </EditionProvider>
       </body>
     </html>
   );

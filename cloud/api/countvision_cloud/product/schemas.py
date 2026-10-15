@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import available_timezones
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -126,6 +126,9 @@ class CameraOut(BaseModel):
     applied_version: int = 0  # config version the device runs
     config_error: str | None = None
     plan_paused: bool = False  # over the plan's camera limit: numbers are not stored
+    managed: bool = False  # added in the web app (the device gets its address from here)
+    source_kind: str | None = None  # webcam | rtsp | http (managed cameras)
+    source_label: str | None = None  # the address without the password
 
 
 class DeviceOut(BaseModel):
@@ -144,6 +147,8 @@ class DeviceOut(BaseModel):
     cameras_online: int
     detector: dict[str, Any] | None = None
     upload: dict[str, Any] | None = None
+    manages_cameras: bool = False  # cameras are added/removed in the web app
+    builtin: bool = False  # CountVision Local: the edge agent on this computer
 
 
 class DeviceDetailOut(DeviceOut):
@@ -164,6 +169,19 @@ class DevicePatch(_In):
 
 
 class CameraPatch(_In):
+    name: str = Field(min_length=1, max_length=120)
+
+    _name = field_validator("name")(_clean)
+
+
+class CameraSourceIn(_In):
+    """Where the picture comes from. webcam: "0".."9"; rtsp: rtsp://...; http: http(s)://... (MJPEG)."""
+
+    kind: Literal["webcam", "rtsp", "http"]
+    address: str = Field(min_length=1, max_length=1000)
+
+
+class ManagedCameraIn(CameraSourceIn):
     name: str = Field(min_length=1, max_length=120)
 
     _name = field_validator("name")(_clean)
@@ -508,7 +526,7 @@ class AlertRuleIn(_In):
     zone: str | None = Field(default=None, max_length=64)
     threshold: float = Field(default=0, ge=0, le=100000)
     duration_min: int = Field(default=5, ge=1, le=24 * 60)
-    channel_ids: list[uuid.UUID] = Field(min_length=1, max_length=10)
+    channel_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)  # [] = on screen only (local)
 
 
 class AlertRulePatch(_In):
@@ -519,7 +537,7 @@ class AlertRulePatch(_In):
     zone: str | None = Field(default=None, max_length=64)
     threshold: float | None = Field(default=None, ge=0, le=100000)
     duration_min: int | None = Field(default=None, ge=1, le=24 * 60)
-    channel_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=10)
+    channel_ids: list[uuid.UUID] | None = Field(default=None, max_length=10)
     enabled: bool | None = None
 
 

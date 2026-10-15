@@ -3,6 +3,8 @@
 - Admins and owners invite; only owners can invite owners.
 - The link is only sent by email (never shown to the inviter), so the link proves that
   the person owns the address: accepting it also confirms the email.
+  Exception: CountVision Local (often no mail server) shows the link once to the admin, who
+  hands it over in person. There accepting confirms nothing beyond the admin's choice.
 - Only a user with the SAME email address can accept.
 """
 
@@ -56,6 +58,7 @@ def create(db: Session, org: Organization, actor: User, actor_membership: Member
         invited_by=actor.id, expires_at=now + timedelta(days=settings.invite_days),
     )
     url = f"{settings.web_url}/invite/{token}"
+    invite.link = url  # not stored: the local edition shows it once to the inviter (no email)
     email.queue(db, email.invite_mail(email_addr, actor.name, org.name, role.value, url,
                                       settings.invite_days))
     audit.record(db, "member.invited", actor=actor.id, org_id=org.id, target_type="invite",

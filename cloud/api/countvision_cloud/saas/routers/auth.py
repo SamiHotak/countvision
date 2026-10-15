@@ -42,6 +42,9 @@ def providers() -> ProvidersOut:
 def signup(body: SignupIn, request: Request, response: Response, db: Session = Depends(get_db)):
     """Create an account and log in. With invite_token: join that organization at once."""
     ratelimit.limit("signup-ip", ratelimit.client_ip(request), get_settings().signups_per_ip_hour, 3600)
+    if get_settings().is_local and not body.invite_token:
+        raise AppError("CountVision Local has no public sign-up. Ask the owner for an invitation link.",
+                       code="signup_closed", status=403)
     if body.invite_token:
         user, _ = invites.signup_and_accept(db, body.invite_token, email_addr=body.email, name=body.name,
                                             password=body.password)
@@ -100,6 +103,9 @@ def resend_verification(user: User = Depends(current_user), db: Session = Depend
 
 @router.post("/forgot-password", response_model=OkOut)
 def forgot_password(body: EmailIn, request: Request, db: Session = Depends(get_db)) -> OkOut:
+    if get_settings().is_local and get_settings().email_backend == "off":
+        raise AppError("This CountVision has no mail server. Ask the owner to make you a new invitation, or "
+                       "run 'countvision-cloud set-password' on this computer.", code="email_off", status=409)
     auth.forgot_password(db, body.email, ratelimit.client_ip(request))
     db.commit()
     return OkOut(message="If an account exists for this email, we sent a link to reset the password.")

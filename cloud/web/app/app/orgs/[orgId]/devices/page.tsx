@@ -6,6 +6,7 @@ import * as React from "react";
 
 import { AddDeviceDialog } from "@/components/add-device";
 import { PageTitle } from "@/components/app-shell";
+import { useIsLocal } from "@/components/edition";
 import { Loading } from "@/components/me";
 import { OrgGate } from "@/components/org-gate";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,9 @@ function DevicesView({ org }: { org: Org }) {
   const [error, setError] = React.useState<string | null>(null);
   const [open, setOpen] = React.useState(false);
   const [, setNow] = React.useState(0);
-  const canAdd = roleRank(org.my_role) >= roleRank("member");
+  // CountVision Local counts on this computer: cameras are added on its device page, no pairing.
+  const local = useIsLocal();
+  const canAdd = roleRank(org.my_role) >= roleRank("member") && !local;
 
   const load = React.useCallback(async () => {
     try {

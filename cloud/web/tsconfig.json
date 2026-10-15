@@ -38,6 +38,8 @@
   "exclude": [
     "node_modules",
     "e2e",
-    "playwright.config.ts"
+    "e2e-local",
+    "playwright.config.ts",
+    "playwright.local.config.ts"
   ]
 }
