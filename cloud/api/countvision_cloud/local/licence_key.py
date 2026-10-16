@@ -10,4 +10,4 @@ accepts only licences signed with that private key. Losing the private key means
 everybody (keep a backup on a USB stick).
 """
 
-PUBLIC_KEY = ""
+PUBLIC_KEY = "oqtKdqz0xAoc1skdBxAP-9xrduPkxy75AJ_Q6btYzfc"
