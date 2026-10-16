@@ -285,6 +285,7 @@ class Supervisor:
                 self._add_managed(spec, start=False)
         self.uploader = None  # cloud.CloudUploader when paired (see start_uploader)
         self.config_sync: ConfigSync | None = None  # when paired (see start_config_sync)
+        self.live_view = None  # live_view.LiveViewServer when live.enabled (see start_live_view)
         self._last_status: dict | None = None
 
     # -- lifecycle ----------------------------------------------------------------------
@@ -384,6 +385,8 @@ class Supervisor:
                 except OSError as exc:
                     log.warning("Could not save the camera list (%s)", exc)
         if changed:
+            if self.live_view is not None:
+                self.live_view.forget_removed()
             self._report_now()
 
     def join(self, timeout: float | None = None) -> None:
@@ -423,6 +426,21 @@ class Supervisor:
         sync.applied.update({w.cam.id: w.health.config_version for w in self.workers
                              if w.health.config_version})
         sync.start()
+
+    def start_live_view(self, server=None) -> None:
+        """Serve the live camera picture on this computer (live.enabled). ``server`` for tests."""
+        if server is None:
+            if not self.cfg.live.enabled:
+                return
+            from .live_view import LiveViewServer
+
+            server = LiveViewServer(self.cfg.live, lambda: self.workers, self.detector, clock=self.clock)
+        try:
+            server.start()
+        except OSError as exc:  # the port is taken: counting goes on without the picture
+            log.error("Live picture NOT available: cannot use port %s (%s)", self.cfg.live.port, exc)
+            return
+        self.live_view = server
 
     def cloud_status(self) -> dict:
         """Status for the cloud: like status.json, plus every camera's lines/zones/classes/schedule
@@ -527,16 +545,24 @@ class Supervisor:
             raise RuntimeError("could not encode the picture")
         return encoded.tobytes()
 
-    def run_forever(self, stop: threading.Event | None = None, *, upload: bool = True) -> None:
-        """Start, then check every second until everything ended or ``stop`` is set."""
+    def run_forever(self, stop: threading.Event | None = None, *, upload: bool = True,
+                    stop_file: str | Path | None = None) -> None:
+        """Start, then check every second until everything ended, ``stop`` is set or
+        ``stop_file`` exists (the CountVision desktop app asks for a clean stop that way: it
+        works on Windows without a console, where Ctrl+C signals cannot be sent)."""
         self.start()
         if upload:
             self.start_uploader()
             self.start_config_sync()
+        self.start_live_view()
+        stop_path = Path(stop_file) if stop_file else None
         next_status = 0.0
         try:
             while self.alive:
                 if stop is not None and stop.is_set():
+                    break
+                if stop_path is not None and stop_path.exists():
+                    log.info("Stop requested (%s)", stop_path)
                     break
                 self.check_alerts()
                 if time.monotonic() >= next_status:
@@ -544,6 +570,8 @@ class Supervisor:
                     next_status = time.monotonic() + self.cfg.status_interval_s
                 time.sleep(0.5)
         finally:
+            if self.live_view is not None:
+                self.live_view.stop()
             self.stop()
             self.join(timeout=15)
             self.check_alerts()
@@ -613,6 +641,7 @@ class Supervisor:
             "upload": asdict(self.uploader.state) if self.uploader is not None else {"state": "disabled"},
             "config_sync": ({"state": self.config_sync.state, "last_error": self.config_sync.last_error}
                             if self.config_sync is not None else {"state": "disabled"}),
+            "live_view": self.live_view.status() if self.live_view is not None else {"state": "disabled"},
         }
 
     def write_status(self) -> Path:

@@ -6,14 +6,25 @@ import * as React from "react";
 
 import { PageTitle } from "@/components/app-shell";
 import { useIsLocal } from "@/components/edition";
+import { LivePicture } from "@/components/live-picture";
 import { OrgGate } from "@/components/org-gate";
 import { HourSpark } from "@/components/charts";
 import { Button } from "@/components/ui/button";
 import { Notice, Panel, PanelHead, RoleBadge } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-dot";
-import { api, errorText, roleRank, timeAgo, type Device, type Org, type Site } from "@/lib/api";
+import {
+  api,
+  errorText,
+  roleRank,
+  timeAgo,
+  type Camera,
+  type Device,
+  type DeviceDetail,
+  type Org,
+  type Site,
+} from "@/lib/api";
 import { changeTone, fmtChange, fmtNum, type SiteToday } from "@/lib/dashboard";
-import { deviceHealth } from "@/lib/device";
+import { cameraHealth, deviceHealth } from "@/lib/device";
 import { useLiveReload } from "@/lib/live";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +82,68 @@ function SiteToday({ s, href }: { s: SiteToday; href: string }) {
   );
 }
 
+/** CountVision Local: a small live picture of every camera of this computer. */
+function CameraTiles({ org, device }: { org: Org; device: Device }) {
+  const [detail, setDetail] = React.useState<DeviceDetail | null>(null);
+  const load = React.useCallback(() => {
+    api.get<DeviceDetail>(`/api/orgs/${org.id}/devices/${device.id}`).then(setDetail).catch(() => undefined);
+  }, [org.id, device.id]);
+  React.useEffect(load, [load, device.camera_count]);
+  useLiveReload(org.id, load);
+  const cams = (detail?.cameras ?? []).filter((c) => !c.plan_paused);
+  if (cams.length === 0) return null;
+  const href = `/app/orgs/${org.id}/devices/${device.id}`;
+  return (
+    <Panel className="mt-6">
+      <PanelHead title="Cameras">
+        <Link href={href} className="text-sm text-accent">Watch and manage</Link>
+      </PanelHead>
+      {cams.length === 1 ? (
+        <SingleCamera org={org} cam={cams[0]} online={detail?.online ?? false} href={href} />
+      ) : (
+        <ul className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5" aria-label="Live pictures">
+          {cams.map((c) => {
+            const h = cameraHealth(c, detail?.online ?? false);
+            return (
+              <li key={c.id} className="min-w-0">
+                <Link href={href} className="block no-underline" data-testid="camera-tile">
+                  <LivePicture orgId={org.id} cameraId={c.id} name={c.name} kind="still" compact
+                    width={640} stillEveryMs={cams.length > 2 ? 3000 : 1500}
+                    stateText={h.health === "ok" ? null : h.label} />
+                  <span className="mt-2 flex items-baseline gap-3">
+                    <span className="min-w-0 flex-1 truncate font-medium text-text">{c.name}</span>
+                    <span className="text-sm text-muted"><span className="text-text">{fmtNum(inToday(c))}</span> in today</span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+const inToday = (c: Camera) => Object.values(c.today).reduce((n, t) => n + t.in, 0);
+
+/** One camera: the picture at a calm size, today's number beside it. */
+function SingleCamera({ org, cam, online, href }: { org: Org; cam: Camera; online: boolean; href: string }) {
+  const h = cameraHealth(cam, online);
+  return (
+    <Link href={href} data-testid="camera-tile"
+      className="grid gap-5 p-4 no-underline sm:p-5 md:grid-cols-[minmax(0,640px)_minmax(0,1fr)] md:items-end">
+      <LivePicture orgId={org.id} cameraId={cam.id} name={cam.name} kind="still" compact width={640}
+        stillEveryMs={1500} stateText={h.health === "ok" ? null : h.label} />
+      <div className="min-w-0">
+        <p className="truncate text-lg font-medium text-text">{cam.name}</p>
+        <p className="mt-1 flex items-center gap-2 text-sm text-muted"><StatusDot health={h.health} /> {h.label}</p>
+        <p className="mt-5 text-[length:var(--text-num)] font-semibold leading-none text-text">{fmtNum(inToday(cam))}</p>
+        <p className="mt-2 text-muted">came in today</p>
+      </div>
+    </Link>
+  );
+}
+
 function Overview({ org }: { org: Org }) {
   const [sites, setSites] = React.useState<Site[] | null>(null);
   const [devices, setDevices] = React.useState<Device[] | null>(null);
@@ -122,6 +195,8 @@ function Overview({ org }: { org: Org }) {
       </Panel>
 
       {error ? <Notice tone="error" className="mt-6">{error}</Notice> : null}
+
+      {local && builtin && builtin.camera_count > 0 ? <CameraTiles org={org} device={builtin} /> : null}
 
       {today && today.length > 0 ? (
         <Panel className="mt-6">

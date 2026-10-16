@@ -101,8 +101,14 @@
   to { color: inherit; }
 }
 .cv-tick { animation: cv-tick 1.2s ease-out; }
+/* Live camera picture: the "Live" light breathes slowly */
+@keyframes cv-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.cv-live-dot { animation: cv-live 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .cv-pulse, .cv-tick { animation: none; }
+  .cv-pulse, .cv-tick, .cv-live-dot { animation: none; }
 }
 
 /* Billing: a camera slot over the plan's limit (paused) */

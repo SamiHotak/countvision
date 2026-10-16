@@ -5,7 +5,8 @@ First start (the web app shows a wizard while no account exists):
 2. business name (= the organization; the local edition has exactly one)
 3. first site with its time zone
 4. the built-in device "This computer" is created and paired automatically: the API writes the
-   device token into the edge agent's folder (cloud.json) together with edge.yaml. The launcher
+   device token into the edge agent's folder (cloud.json) together with edge.yaml (which also holds
+   the key of the live camera picture, see live_view.py). The launcher
    starts ``countvision-edge run --config <edge_dir>/edge.yaml``; it counts the cameras that are
    added in the web app (managed cameras), none at first.
 5. the first camera (webcam / IP camera) is added in the next wizard step with the normal camera API.
@@ -121,7 +122,7 @@ def ensure_edge_files(db: Session) -> bool:
         except OSError:
             same = False
         if not same:  # an update changed the settings (model path, API address ...): token stays
-            config.write_text(want, encoding="utf-8")
+            _write_private(config, want)
             log.info("Built-in edge agent: %s updated", config)
         return False
     new = device_service.TOKEN_PREFIX + secrets.token_urlsafe(32)
@@ -179,12 +180,26 @@ def edge_config_text(edge_dir: Path) -> str:
         "privacy:",
         "  preview: blur",
         "  snapshots: true",
+        "# Live camera picture for the CountVision app on this computer only (127.0.0.1). Who may",
+        "# watch, and whether people are blurred, is set by the owner in Settings -> Privacy.",
+        "live:",
+        "  enabled: true",
+        "  host: 127.0.0.1",
+        f"  port: {s.local_live_port}",
+        f"  key: {_q(live_key())}",
+        "  max_mode: full",
         "storage:",
         "  retention_days: 30",
         "cameras: []",
         "",
     ]
     return "\n".join(lines)
+
+
+def live_key() -> str:
+    from .live_view import edge_key
+
+    return edge_key()
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -211,7 +226,7 @@ def write_edge_files(device: Device, token: str, *, org_name: str, site_name: st
         "paired_at": time.time(),
     }
     _write_private(edge_dir / CREDENTIALS, json.dumps(creds, indent=2))
-    (edge_dir / EDGE_CONFIG).write_text(edge_config_text(edge_dir), encoding="utf-8")
+    _write_private(edge_dir / EDGE_CONFIG, edge_config_text(edge_dir))  # contains the live key
     return edge_dir
 
 

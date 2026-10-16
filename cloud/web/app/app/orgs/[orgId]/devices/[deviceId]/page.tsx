@@ -10,6 +10,7 @@ import { Loading } from "@/components/me";
 import { OrgGate } from "@/components/org-gate";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { LivePicture } from "@/components/live-picture";
 import { Field, Label, Select } from "@/components/ui/input";
 import { Notice, Panel, PanelHead } from "@/components/ui/panel";
 import { StatusDot } from "@/components/ui/status-dot";
@@ -38,8 +39,10 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function CameraRow({ cam, org, online, onRenamed }: {
+function CameraRow({ cam, org, online, onRenamed, live }: {
   cam: Camera; org: Org; online: boolean; onRenamed: () => void;
+  /** CountVision Local: the live picture of this computer's camera ("still" when many cameras) */
+  live?: "stream" | "still" | null;
 }) {
   const local = useIsLocal();
   const [changing, setChanging] = React.useState(false);
@@ -73,6 +76,12 @@ function CameraRow({ cam, org, online, onRenamed }: {
 
   return (
     <li className="grid gap-x-6 gap-y-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]" data-testid="camera-row">
+      {live ? (
+        <div className="md:col-span-2">
+          <LivePicture orgId={org.id} cameraId={cam.id} name={cam.name} kind={live} className="w-full max-w-[880px]"
+            stateText={online && h.health === "ok" ? null : h.label} />
+        </div>
+      ) : null}
       <div className="min-w-0">
         <div className="flex items-center gap-2.5">
           <StatusDot health={h.health} />
@@ -207,6 +216,7 @@ function EditDialog({ org, device, sites, open, onClose, onSaved }: {
 
 function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
   const router = useRouter();
+  const local = useIsLocal();
   const [d, setD] = React.useState<DeviceDetail | null>(null);
   const [sites, setSites] = React.useState<Site[]>([]);
   const [error, setError] = React.useState<{ text: string; missing: boolean } | null>(null);
@@ -369,8 +379,9 @@ function DeviceView({ org, deviceId }: { org: Org; deviceId: string }) {
           </p>
         ) : (
           <ul className="divide-y divide-rule" aria-label="Cameras">
-            {d.cameras.map((c) => (
-              <CameraRow key={c.id} cam={c} org={org} online={d.online} onRenamed={() => void load()} />
+            {d.cameras.map((c, i) => (
+              <CameraRow key={c.id} cam={c} org={org} online={d.online} onRenamed={() => void load()}
+                live={local && d.builtin && !c.plan_paused ? (i < 2 ? "stream" : "still") : null} />
             ))}
           </ul>
         )}

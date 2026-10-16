@@ -105,8 +105,9 @@ Org API added: `GET /cameras/<id>`, `PUT /cameras/<id>/config`, `POST /cameras/<
 ## CountVision Local: the offline edition (Phase 4.5 Session A)
 
 The **same code**, switched with one setting: `CV_EDITION=local`. For a shop that wants everything on
-ONE Windows PC, without internet and without a monthly fee. The Windows installer (setup.exe, a
-launcher, portable PostgreSQL, autostart) comes in Session B; this section is the app side.
+ONE Windows PC, without internet and without a monthly fee. The desktop app that starts everything is
+in `desktop/` (Session B, see `desktop/README.md`); the Windows installer (setup.exe) comes in Session C.
+This section is the app side.
 
 What changes with `CV_EDITION=local` (code in `api/countvision_cloud/local/`):
 
@@ -122,6 +123,24 @@ What changes with `CV_EDITION=local` (code in `api/countvision_cloud/local/`):
 | alerts by email/Telegram/webhook | alerts **on screen** (the bell) + webhooks in the network; email only with your own SMTP server |
 | emails confirm addresses, invitations by email | no confirmation; invitation **links shown once** to copy |
 | backups by the operator | **Backups** on the Settings page (owner): one `.cvbackup` file (pg_dump + secret key) to a folder / USB stick, restore with a safety backup first |
+| numbers only, never video (snapshot on request) | the **live camera picture** with boxes, lines and zones on the device page, the camera editor, the overview and the setup wizard (Session B, see below) |
+
+### Live camera picture (Phase 4.5 Session B, local edition only)
+
+The built-in edge agent serves the camera pictures with the analysis drawn on them on
+`127.0.0.1:8002` (`live:` in `edge.yaml`, key protected; the key is derived from the installation's
+secret key). The API (`local/live_view.py`) passes them on to logged-in members only:
+
+* `GET /api/orgs/{org}/cameras/{id}/live.mjpg?geometry=&w=&fps=` (MJPEG stream for an `<img>`),
+  `.../live.jpg` (one picture, used for the overview tiles every 1.5 s).
+* `GET|PUT /api/orgs/{org}/live-view` = the owner's privacy setting in Settings -> Privacy:
+  **people blurred** (default: every detected object of ALL classes pixelated, max 960 px),
+  **full picture**, or **off**; optionally "only admins and the owner may watch". Audited
+  (`privacy.live_view_changed`); watching is logged once per person, camera and 30 minutes
+  (`camera.live_viewed`).
+* Only cameras of the built-in device ("This computer"); nothing is recorded or stored; a picture is
+  made only while somebody watches (a hidden browser tab stops its stream).
+* The cloud edition has none of this (no video leaves the building).
 
 Settings of the local edition (environment variables): `CV_EDITION=local`, `CV_DATA_DIR` (everything:
 secret key, backups, video jobs, `edge/`), `CV_DATABASE_URL`, `CV_PG_BIN_DIR` (folder with
@@ -133,7 +152,12 @@ works). The secret key is created once in `<CV_DATA_DIR>/secret_key` (it encrypt
 `CV_LOG_LEVEL` ...): `countvision-edge run --config <CV_DATA_DIR>/edge/edge.yaml`. The launcher will do
 that; by hand on Windows use a new PowerShell window.
 
-### Try it on Windows (no Docker, needs Python 3.12+, Node 22, a PostgreSQL 16 server)
+### Try it on Windows: the desktop app (Session B)
+
+`desktop/README.md`: one command starts the database, the API, the web app and the counting service and
+opens CountVision in its own window. The manual way below still works for debugging.
+
+### By hand (no Docker for the app, needs Python 3.12+, Node 22, a PostgreSQL 16 server)
 
 Docker's database works too: `docker compose up -d db` in `cloud\` (port 5433), then:
 

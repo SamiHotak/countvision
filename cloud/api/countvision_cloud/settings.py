@@ -119,6 +119,8 @@ class Settings(BaseSettings):
     local_edge_dir: str | None = None
     # How the built-in edge agent reaches this API (same PC)
     local_api_url: str = "http://127.0.0.1:8001"
+    # Port of the built-in edge agent's live camera picture (127.0.0.1 only; key protected)
+    local_live_port: int = Field(default=8002, ge=1, le=65535)
     # In-process timers (alerts, reports, cleanup ...). Tests switch them off and call the tasks.
     local_background: bool = True
     # Folder with pg_dump / pg_restore (the bundled PostgreSQL). Empty = search the PATH.

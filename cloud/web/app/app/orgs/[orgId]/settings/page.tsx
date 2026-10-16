@@ -8,6 +8,7 @@ import { Backups } from "@/components/backups";
 import { useIsLocal } from "@/components/edition";
 import { Loading, useMe } from "@/components/me";
 import { OrgGate } from "@/components/org-gate";
+import { PrivacySettings } from "@/components/privacy-settings";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/input";
@@ -54,6 +55,11 @@ function describe(e: AuditEntry): string {
     case "backup.created": return `made a backup (${m.name})`;
     case "backup.restored": return `restored the backup ${m.name}`;
     case "device.token_renewed": return `renewed the key of the device "${m.name}"`;
+    case "privacy.live_view_changed": {
+      const text: Record<string, string> = { blur: "people blurred", full: "full picture", off: "off" };
+      return `set the live picture to ${text[String(m.mode)] ?? m.mode}${m.admins_only ? " (admins only)" : ""}`;
+    }
+    case "camera.live_viewed": return `watched the live picture of the camera "${m.name}"`;
     default: return e.action;
   }
 }
@@ -196,6 +202,12 @@ function SettingsView({ org, reload }: { org: Org; reload: () => Promise<void> }
             <PanelHead title="Name" />
             <RenameForm org={org} onSaved={reload} />
           </Panel>
+          {local ? (
+            <Panel>
+              <PanelHead title="Privacy" />
+              <PrivacySettings org={org} />
+            </Panel>
+          ) : null}
           {local && org.my_role === "owner" ? (
             <Panel>
               <PanelHead title="Backups" />

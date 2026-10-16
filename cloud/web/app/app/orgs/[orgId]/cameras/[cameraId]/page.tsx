@@ -8,6 +8,7 @@ import { useParams } from "next/navigation";
 import * as React from "react";
 
 import { CameraStage, type Selection, type Tool } from "@/components/camera-stage";
+import { useIsLocal } from "@/components/edition";
 import { Section, Seg, ToolButton } from "@/components/editor-ui";
 import { Loading } from "@/components/me";
 import { OrgGate } from "@/components/org-gate";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/api";
 import { cloneDoc, EMPTY_CONFIG, normalize, problems, sameDoc, uniqueName } from "@/lib/geometry";
 import { liveLabel, useLive } from "@/lib/live";
+import { liveUrl, MODE_TEXT, useLiveViewSetting, usePageVisible } from "@/lib/live-picture";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -90,6 +92,11 @@ function Editor({ org, cameraId }: { org: Org; cameraId: string }) {
   const [pending, setPending] = React.useState<Pt[] | null>(null);
   const [hint, setHint] = React.useState("");
   const [shot, setShot] = React.useState<Snap>({ status: "idle" });
+  // CountVision Local: the real live picture of this computer's camera instead of a snapshot
+  const local = useIsLocal();
+  const liveSetting = useLiveViewSetting(org.id, local && !!d?.device_builtin);
+  const pageVisible = usePageVisible();
+  const livePicture = local && !!d?.device_builtin && !!liveSetting?.can_watch;
   const [imgAspect, setImgAspect] = React.useState<number | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState<{ tone: "error" | "success"; text: string } | null>(null);
@@ -333,6 +340,8 @@ function Editor({ org, cameraId }: { org: Org; cameraId: string }) {
   const st = cameraState(d);
   const sync = syncText(d, dirty);
   const aspect = d.frame_width && d.frame_height ? d.frame_width / d.frame_height : imgAspect ?? 16 / 9;
+  const liveImage = livePicture && pageVisible
+    ? liveUrl(org.id, cameraId, "mjpg", { geometry: false, width: 1280, fps: 8 }) : null;
   const snapBlocked = !d.device_online ? "The device is offline." : d.snapshots_allowed === false
     ? "Snapshots are switched off on this device (privacy setting). Draw on the grid." : null;
   const schedule = doc.schedule;
@@ -369,21 +378,33 @@ function Editor({ org, cameraId }: { org: Org; cameraId: string }) {
               <ToolButton onClick={redo} disabled={!future.length} label="Redo">Redo</ToolButton>
               <ToolButton toggle active={snap} onClick={() => setSnapOn((v) => !v)} keyHint="S" label="Snap">Snap</ToolButton>
               <span className="ml-auto" />
-              <Button size="sm" variant="secondary" onClick={() => void takeSnapshot()}
-                disabled={!!snapBlocked} busy={shot.status === "pending"} title={snapBlocked ?? undefined}>
-                {shot.status === "ready" ? "New snapshot" : "Take snapshot"}
-              </Button>
+              {livePicture ? (
+                <span className="flex items-center gap-2 px-2 text-sm text-muted" data-testid="editor-live">
+                  <span aria-hidden className="cv-live-dot size-2 rounded-full bg-danger" />
+                  Live, {MODE_TEXT[liveSetting!.mode]}
+                </span>
+              ) : (
+                <Button size="sm" variant="secondary" onClick={() => void takeSnapshot()}
+                  disabled={!!snapBlocked} busy={shot.status === "pending"} title={snapBlocked ?? undefined}>
+                  {shot.status === "ready" ? "New snapshot" : "Take snapshot"}
+                </Button>
+              )}
             </div>
           ) : null}
 
           <CameraStage doc={doc} onChange={change} onBeginChange={beginChange} tool={tool} setTool={pickTool}
             selection={sel} setSelection={setSel} snap={snap} readOnly={readOnly} aspect={aspect}
-            image={shot.status === "ready" ? shot.url : null}
+            image={liveImage ?? (shot.status === "ready" ? shot.url : null)}
+            imageAlt={liveImage ? `Live picture of ${d.name}` : undefined}
             onImageSize={(w, h) => setImgAspect(w / h)} today={today} pulses={pulses} onHint={setHint}
             pending={pending} setPending={setPending} />
 
           <div className="mt-2 min-h-6 text-sm text-muted" aria-live="polite" data-testid="hint">
-            {shot.status === "error" ? <span className="text-danger">Snapshot: {shot.message}</span>
+            {livePicture ? (
+              <span>
+                {hint || "The live picture of this camera. Nothing is recorded: the picture is only shown here."}
+              </span>
+            ) : shot.status === "error" ? <span className="text-danger">Snapshot: {shot.message}</span>
               : shot.status === "ready" ? (
                 <span>
                   Snapshot from {shot.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. People and

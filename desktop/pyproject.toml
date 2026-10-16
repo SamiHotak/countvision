@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "countvision-desktop"
+version = "0.1.0"
+description = "CountVision Local desktop app: starts the database, the API, the web app and the counting service, and shows CountVision in its own window."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+# The launcher itself needs only the Python standard library. The window and the tray icon are
+# optional: without them CountVision opens in Microsoft Edge's app mode (also a window without an
+# address bar) or prints the address.
+dependencies = []
+
+[project.optional-dependencies]
+window = [
+    "pywebview>=5.3",   # BSD-3-Clause: the native window (Microsoft Edge WebView2 on Windows)
+    "pystray>=0.19",    # LGPL-3.0 (used unmodified, as a separate library): the tray icon
+    "pillow>=10",       # HPND (permissive): the tray icon picture
+]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+countvision-desktop = "countvision_desktop.__main__:main"
+
+[project.gui-scripts]
+# Windows: starts without a console window (pythonw)
+countvision-app = "countvision_desktop.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["countvision_desktop*"]
+
+[tool.setuptools.package-data]
+"countvision_desktop" = ["assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]

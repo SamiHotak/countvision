@@ -153,15 +153,15 @@ def _run_supervised(cfg, args: argparse.Namespace) -> int:
     )
     supervisor = Supervisor(cfg, detector, buffer, cameras, max_frames=args.max_frames)
     stop = threading.Event()
-    signal.signal(signal.SIGINT, lambda *_: stop.set())
-    if hasattr(signal, "SIGTERM"):
-        signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):  # SIGBREAK: Ctrl+Break on Windows
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), lambda *_: stop.set())
     ids = ", ".join(c.id for c in cameras)
     print(f"CountVision edge {__version__}: running {len(cameras)} camera(s): {ids}. "
           "Press Ctrl+C to stop.")
     print(f"Status: {supervisor.status_path}  (countvision-edge health --data-dir {cfg.data_dir})")
     try:
-        supervisor.run_forever(stop)
+        supervisor.run_forever(stop, stop_file=args.stop_file)
     finally:
         detector.close()
 
@@ -504,6 +504,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--annotated", metavar="FILE", help="Write an annotated video (.mp4, one camera)")
     run.add_argument("--report", metavar="FILE", help="Write a JSON report at the end")
     run.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    run.add_argument("--stop-file", metavar="FILE",
+                     help="Stop cleanly when this file appears (used by the CountVision desktop app)")
     run.set_defaults(func=cmd_run)
 
     demo = sub.add_parser("demo", help="Self-test on a synthetic video (no camera, no model)")

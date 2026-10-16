@@ -3,6 +3,7 @@
 Public:  GET /api/edition, POST /api/local/setup (only while no account exists)
 Org:     /api/orgs/{org_id}/licence (GET members, PUT admins, DELETE owners)
          /api/orgs/{org_id}/backups ... (owners only: a backup contains everything)
+         /api/orgs/{org_id}/live-view (GET members, PUT owner), /cameras/{id}/live.jpg + live.mjpg
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from ..saas.models import Role
 from ..saas.routers.me import me_out
 from ..saas.services import audit, auth, ratelimit
 from ..settings import get_settings
-from . import backup, licence, setup
+from . import backup, licence, live_view, setup
 
 log = logging.getLogger(__name__)
 
@@ -41,8 +42,9 @@ def edition(db: Session = Depends(get_db)) -> dict[str, Any]:
     """Which edition runs, so the web app can show the right pages (no login needed)."""
     s = get_settings()
     if s.is_local:
-        return {**setup.status(db), "google": False, "signup": False, "telegram": False, "billing": "licence"}
-    return {"edition": "cloud", "version": __version__, "needs_setup": False,
+        return {**setup.status(db), "google": False, "signup": False, "telegram": False, "billing": "licence",
+                "live_picture": True}
+    return {"edition": "cloud", "live_picture": False, "version": __version__, "needs_setup": False,
             "email": s.email_backend != "off",
             "google": s.google_enabled, "signup": True, "telegram": True,
             "billing": "stripe" if s.billing_enabled else "off"}
@@ -211,3 +213,71 @@ def restore_backup(name: str, body: RestoreIn, response: Response,
                          target_id=org.id,
                          name=path.name, by=email, safety_backup=result["safety_backup"])
     return {**result, "message": "Restored. Please log in again."}
+
+
+# --- live camera picture ------------------------------------------------------------------------------
+
+
+class LiveViewIn(BaseModel):
+    mode: str = Field(pattern="^(full|blur|off)$")
+    admins_only: bool = False
+
+
+@router.get("/api/orgs/{org_id}/live-view")
+def get_live_view(ctx: OrgContext = Depends(org_access()), db: Session = Depends(get_db)) -> dict:
+    """The owner's live picture setting, and whether this person may watch / change it."""
+    return live_view.summary(db, ctx.role)
+
+
+@router.put("/api/orgs/{org_id}/live-view")
+def put_live_view(body: LiveViewIn, ctx: OrgContext = Depends(org_access(Role.OWNER)),
+                  db: Session = Depends(get_db)) -> dict:
+    live_view.change(db, ctx.org, ctx.user, mode=body.mode, admins_only=body.admins_only)
+    db.commit()
+    return live_view.summary(db, ctx.role)
+
+
+def _live_target(org_id: uuid.UUID, camera_id: uuid.UUID, request: Request, **view: Any) -> live_view.Target:
+    """Login, membership, plan, privacy setting and camera checks (own short DB session: the
+    stream itself must not keep a database connection open)."""
+    from ..saas.deps import session_token
+    from ..saas.errors import NotAuthenticated
+    from ..saas.services import billing, orgs
+
+    with session_factory()() as db:
+        user = auth.user_from_token(db, session_token(request))
+        if user is None:
+            raise NotAuthenticated("Please log in.")
+        org, membership = orgs.access(db, org_id, user, Role.VIEWER)
+        billing.require_active(db, org.id)
+        t = live_view.target(db, org, user, Role(membership.role), camera_id, **view)
+        db.commit()  # the "watched" entry in the activity log
+        return t
+
+
+_NO_STORE = {"Cache-Control": "no-store, private", "X-Accel-Buffering": "no"}
+
+
+@router.get("/api/orgs/{org_id}/cameras/{camera_id}/live.jpg")
+async def live_frame(org_id: uuid.UUID, camera_id: uuid.UUID, request: Request,
+                     geometry: bool = Query(True), w: int = Query(960, ge=160, le=1920)) -> Response:
+    """The newest picture of a camera of this computer, with the analysis drawn on it."""
+    t = await run_in_threadpool(_live_target, org_id, camera_id, request, kind="frame.jpg",
+                                geometry=geometry, width=w, fps=1)
+    jpeg = await live_view.fetch_frame(t)
+    return Response(jpeg, media_type="image/jpeg", headers={**_NO_STORE, "X-Live-Mode": t.mode})
+
+
+@router.get("/api/orgs/{org_id}/cameras/{camera_id}/live.mjpg")
+async def live_stream(org_id: uuid.UUID, camera_id: uuid.UUID, request: Request,
+                      geometry: bool = Query(True), w: int = Query(960, ge=160, le=1920),
+                      fps: float = Query(8, gt=0, le=15)) -> Response:
+    """The live picture as an MJPEG stream (an <img> shows it). Ends when the page is closed."""
+    from fastapi.responses import StreamingResponse
+
+    t = await run_in_threadpool(_live_target, org_id, camera_id, request, kind="stream.mjpg",
+                                geometry=geometry, width=w, fps=fps)
+    stream = live_view.Stream(t)
+    await stream.open()
+    return StreamingResponse(stream.body(), media_type=stream.content_type,
+                             headers={**_NO_STORE, "X-Live-Mode": t.mode})

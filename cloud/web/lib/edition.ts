@@ -9,6 +9,7 @@ export interface Edition {
   signup: boolean; // the public sign-up page exists
   telegram: boolean;
   billing: "stripe" | "off" | "licence";
+  live_picture?: boolean; // CountVision Local: the real camera picture is shown
 }
 
 export const CLOUD_DEFAULT: Edition = {

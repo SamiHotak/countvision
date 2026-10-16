@@ -81,6 +81,7 @@ def camera_detail(db: Session, cam: Camera) -> CameraDetailOut:
         config_source=source, desired_version=cam.desired_version, applied_version=cam.applied_version,
         config_error=cam.config_error, snapshots_allowed=cam.snapshots_allowed,
         frame_width=cam.frame_width, frame_height=cam.frame_height, today=today,
+        device_builtin=bool(device.builtin),
     )
 
 

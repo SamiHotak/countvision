@@ -12,6 +12,7 @@ import logging
 import sys
 import time
 from importlib.resources import files
+from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
@@ -160,6 +161,38 @@ def _licence_create(args) -> None:
         print(f"\nAlso written to {args.out}")
 
 
+def _serve(args: argparse.Namespace) -> None:
+    """Run uvicorn. Open live streams (SSE, camera pictures) never end by themselves, so a short
+    graceful timeout closes them at shutdown (before, Ctrl+C had to be pressed twice). With
+    --stop-file the server also stops when that file appears: the desktop app uses it on Windows,
+    where a program without a console window cannot receive Ctrl+C."""
+    import threading
+
+    import uvicorn
+
+    if args.reload:
+        uvicorn.run("countvision_cloud.main:app", host=args.host, port=args.port, reload=True,
+                    proxy_headers=False, timeout_graceful_shutdown=args.graceful_timeout)
+        return
+    config = uvicorn.Config("countvision_cloud.main:app", host=args.host, port=args.port,
+                            proxy_headers=False,  # X-Forwarded-For is read in ratelimit.client_ip
+                            timeout_graceful_shutdown=args.graceful_timeout)
+    server = uvicorn.Server(config)
+    if args.stop_file:
+        stop_file = Path(args.stop_file)
+
+        def watch() -> None:
+            while not server.should_exit:
+                if stop_file.exists():
+                    logging.getLogger(__name__).info("Stop requested (%s)", stop_file)
+                    server.should_exit = True
+                    return
+                time.sleep(0.5)
+
+        threading.Thread(target=watch, name="stop-file", daemon=True).start()
+    server.run()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="countvision-cloud", description="CountVision cloud tools")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -171,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8001)
     s.add_argument("--reload", action="store_true")
+    s.add_argument("--stop-file", help="stop cleanly when this file appears (the CountVision desktop app)")
+    s.add_argument("--graceful-timeout", type=float, default=3.0,
+                   help="seconds open live streams get before they are closed at shutdown")
     sd = sub.add_parser("sample-data", help="add a 'Demo café' site with 5 weeks of invented numbers")
     sd.add_argument("--org", required=True, help="organization id or slug")
     sd.add_argument("--days", type=int, default=35)
@@ -300,10 +336,7 @@ def main(argv: list[str] | None = None) -> int:
         for k, v in lic.as_dict().items():
             print(f"{k:14} {v}")
     elif args.cmd == "serve":
-        import uvicorn
-
-        uvicorn.run("countvision_cloud.main:app", host=args.host, port=args.port, reload=args.reload,
-                    proxy_headers=False)  # X-Forwarded-For is read in ratelimit.client_ip
+        _serve(args)
     return 0
 
 

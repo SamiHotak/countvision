@@ -48,14 +48,20 @@ test("first start, camera, counting line, live count, licence, alerts, team, bac
   await page.getByTestId("setup-add-camera").click();
   await expect(page.getByTestId("camera-state")).toHaveAttribute("data-state", "running", { timeout: 60_000 });
   await expect(page.getByTestId("camera-state")).toContainText("Counting");
-  await page.getByTestId("test-picture").click();
-  await expect(page.getByTestId("test-picture-image")).toBeVisible({ timeout: 15_000 });
+  // the live camera picture (people blurred by default) appears as soon as it counts
+  const wizardLive = page.getByTestId("live-picture");
+  await expect(wizardLive).toHaveAttribute("data-status", "live", { timeout: 20_000 });
+  await expect(wizardLive).toHaveAttribute("data-mode", "blur");
+  await expect(wizardLive).toContainText("Live, people blurred");
   await page.getByTestId("setup-camera-next").click();
 
   // step 3 -> the camera editor: draw the door line across the walkway and save
   await expect(page.getByRole("heading", { name: "The counting line" })).toBeVisible();
   await page.getByTestId("setup-draw-line").click();
   await expect(page.getByRole("heading", { name: "Entrance" })).toBeVisible();
+  await expect(page.getByTestId("editor-live")).toContainText("Live, people blurred"); // live, no snapshot
+  await expect(page.getByRole("button", { name: "Take snapshot" })).toHaveCount(0);
+  await expect(page.getByRole("img", { name: "Live picture of Entrance" })).toBeVisible();
   await page.getByRole("button", { name: "Line", exact: true }).click();
   await dragOnStage(page, [0.1, 0.5], [0.9, 0.5]);
   await expect(page.getByTestId("shape-row").filter({ hasText: "line 1" })).toBeVisible();
@@ -74,6 +80,33 @@ test("first start, camera, counting line, live count, licence, alerts, team, bac
   await expect.poll(async () => Number(await row.getByTestId("count-in").first().innerText()),
     { timeout: 60_000, message: "nobody counted" }).toBeGreaterThan(0);
   await expect(page.getByRole("button", { name: "Remove device" })).toHaveCount(0); // the built-in device stays
+  await expect(row.getByTestId("live-picture")).toHaveAttribute("data-status", "live", { timeout: 20_000 });
+
+  // the overview shows a live tile of the camera
+  await nav.getByRole("link", { name: "Overview" }).click();
+  await expect(page.getByTestId("camera-tile").getByTestId("live-picture"))
+    .toHaveAttribute("data-status", "live", { timeout: 20_000 });
+
+  // Settings -> Privacy: the owner switches the live picture to full, then off (counting goes on)
+  await nav.getByRole("link", { name: "Settings" }).click();
+  const privacy = page.getByTestId("privacy-settings");
+  await privacy.getByText("Full picture", { exact: true }).click();
+  await privacy.getByRole("button", { name: "Save privacy setting" }).click();
+  await expect(privacy.getByText(/Saved/)).toBeVisible();
+  await nav.getByRole("link", { name: "Devices" }).click();
+  await page.getByTestId("device-row").filter({ hasText: "This computer" }).click();
+  await expect(row.getByTestId("live-picture")).toHaveAttribute("data-mode", "full");
+  await expect(row.getByTestId("live-picture")).toHaveAttribute("data-status", "live", { timeout: 20_000 });
+  await nav.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByText(/set the live picture to full picture/)).toBeVisible(); // in the activity log
+  await expect(page.getByText(/watched the live picture of the camera "Entrance"/).first()).toBeVisible();
+  await privacy.getByText("Off", { exact: true }).click();
+  await privacy.getByRole("button", { name: "Save privacy setting" }).click();
+  await expect(privacy.getByText(/Saved/)).toBeVisible();
+  await nav.getByRole("link", { name: "Devices" }).click();
+  await page.getByTestId("device-row").filter({ hasText: "This computer" }).click();
+  await expect(row.getByTestId("live-off")).toContainText("switched off");
+  await expect(row).toContainText("Counting");
 
   // cloud-only parts are hidden; the licence page shows the trial
   await expect(nav.getByRole("link", { name: /^Billing/ })).toHaveCount(0);

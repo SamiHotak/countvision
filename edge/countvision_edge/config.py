@@ -345,6 +345,41 @@ class CloudConfig(_Model):
     manage_cameras: bool = False
 
 
+class LiveViewConfig(_Model):
+    """Live camera picture for the CountVision Local app (``countvision-edge run`` only).
+
+    A tiny HTTP server on THIS computer serves the camera picture with the analysis drawn on it
+    (boxes, track ids, lines with IN/OUT, zones). The CountVision API on the same computer shows
+    it to logged-in members of the business. Pictures are made only while someone watches, kept
+    in memory only, and never written anywhere.
+
+    enabled:   off by default. CountVision Local's edge.yaml switches it on.
+    host:      127.0.0.1 = only programs on this computer can connect (keep it like that: the
+               API is the one that checks who may watch).
+    port:      default 8002.
+    key:       shared secret; every request must send ``Authorization: Bearer <key>``. Needed
+               when enabled (at least 16 characters). Env CV_LIVE_KEY.
+    max_mode:  "blur" (people and vehicles pixelated) or "full" (the picture as it is). A
+               request for "full" is refused when max_mode is "blur".
+    max_width: the picture is never wider than this.
+    max_fps:   at most this many pictures per second per viewer.
+    """
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = Field(8002, ge=0, le=65535)  # 0 = any free port (tests)
+    key: str | None = None
+    max_mode: Literal["blur", "full"] = "blur"
+    max_width: int = Field(1280, ge=160, le=3840)
+    max_fps: float = Field(10.0, gt=0, le=30)
+
+    @model_validator(mode="after")
+    def _key_needed(self) -> LiveViewConfig:
+        if self.enabled and len(self.key or "") < 16:
+            raise ValueError("live.key: set a key of at least 16 characters when live.enabled is true")
+        return self
+
+
 class StorageConfig(_Model):
     db_path: str | None = None  # default: <data_dir>/countvision.db
     retention_days: int = Field(30, ge=1)  # numbers older than this are deleted
@@ -362,6 +397,7 @@ class EdgeConfig(_Model):
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     alerts: AlertsConfig = Field(default_factory=AlertsConfig)
     cloud: CloudConfig = Field(default_factory=CloudConfig)
+    live: LiveViewConfig = Field(default_factory=LiveViewConfig)
     cameras: list[CameraConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -445,7 +481,7 @@ def expand_env(value: Any, env: Mapping[str, str] | None = None) -> Any:
 
 def parse_config(data: Mapping[str, Any], env: Mapping[str, str] | None = None) -> EdgeConfig:
     """Validate a config dict. Environment overrides: CV_DATA_DIR, CV_DB_PATH, CV_LOG_LEVEL,
-    CV_DEVICE_ID, CV_PREVIEW (blur | off | full), CV_CLOUD_URL."""
+    CV_DEVICE_ID, CV_PREVIEW (blur | off | full), CV_CLOUD_URL, CV_LIVE_KEY."""
     environ = os.environ if env is None else env
     expanded = expand_env(dict(data), environ)
     overrides = {
@@ -455,6 +491,7 @@ def parse_config(data: Mapping[str, Any], env: Mapping[str, str] | None = None) 
         "CV_DB_PATH": ("storage", "db_path"),
         "CV_PREVIEW": ("privacy", "preview"),
         "CV_CLOUD_URL": ("cloud", "url"),
+        "CV_LIVE_KEY": ("live", "key"),
     }
     for variable, path in overrides.items():
         if environ.get(variable):

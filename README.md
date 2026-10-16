@@ -34,6 +34,12 @@ today's chart and CSV download.
   (and replays them after a network outage), device status page with today's counts.
 - Phase 3, Session C: draw lines and zones in the browser on a pixelated snapshot, choose what to
   count and the counting hours; the device uses them within about a second. Live counters (SSE).
+- Phase 4: dashboards, PDF/CSV reports, alerts (Telegram, email, webhooks), public API, video file
+  analysis, Stripe billing with plans by number of cameras.
+- Phase 4.5: **CountVision Local**, the offline edition for one Windows PC (`CV_EDITION=local`): setup
+  wizard, cameras added in the app, licence keys, backups, the live camera picture with the analysis
+  drawn on it, and the desktop app ([`desktop/`](desktop/README.md)) that starts everything in its own
+  window. The Windows installer is next.
 
 ## Install on a pilot device (one line)
 
@@ -59,6 +65,7 @@ Docker by hand: [`docker/README.md`](docker/README.md).
 | `install.ps1`, `install.sh` | One-line installers (Windows / Linux with Docker). |
 | `docker/` | Docker images (CPU, NVIDIA, Jetson), compose file, test RTSP cameras. |
 | `cloud/` | The SaaS app: `api/` (FastAPI, Postgres/TimescaleDB, Redis, Celery) and `web/` (Next.js). See `cloud/README.md`. |
+| `desktop/` | CountVision Local desktop app: starts database, API, web app and counting service; own window + tray icon. See `desktop/README.md`. |
 | `docs/pilot/` | Pilot pack: install guide, sign, privacy notice, agreement, AVV, DPIA, checklist. |
 | `eval/` | Hand labels, accuracy and speed results, `laptop.bat`, Colab notebook. See `eval/README.md`. |
 | `.github/workflows/` | CI: lint, tests and browser tests on every push (edge, cloud, Docker; CPU only). |

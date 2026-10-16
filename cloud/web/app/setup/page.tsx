@@ -7,7 +7,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { CameraState, SourceFields, TestPicture, type SourceKind } from "@/components/camera-source";
+import { CameraState, SourceFields, type SourceKind } from "@/components/camera-source";
+import { LivePicture } from "@/components/live-picture";
 import { Wordmark } from "@/components/brand";
 import { useEdition } from "@/components/edition";
 import { Loading, useMe } from "@/components/me";
@@ -71,6 +72,8 @@ function AccountStep({ onDone }: { onDone: (p: Progress) => void }) {
   const [fields, setFields] = React.useState<Record<string, string>>({});
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // Europe/Berlin is chosen, not the browser's zone: a shop PC's clock is often set to some other
+  // zone. The browser's zone is offered in the list.
   const browserTz = React.useMemo(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -78,7 +81,7 @@ function AccountStep({ onDone }: { onDone: (p: Progress) => void }) {
       return "Europe/Berlin";
     }
   }, []);
-  const zones = COMMON_TIMEZONES.includes(browserTz) ? COMMON_TIMEZONES : [browserTz, ...COMMON_TIMEZONES];
+  const zones = COMMON_TIMEZONES.includes(browserTz) ? COMMON_TIMEZONES : [...COMMON_TIMEZONES, browserTz];
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -129,10 +132,11 @@ function AccountStep({ onDone }: { onDone: (p: Progress) => void }) {
             hint="The shop or branch these cameras are in." />
           <div className="space-y-1.5">
             <Label htmlFor="timezone">Time zone</Label>
-            <Select id="timezone" name="timezone" defaultValue={browserTz}>
+            <Select id="timezone" name="timezone" defaultValue="Europe/Berlin">
               {zones.map((z) => <option key={z} value={z}>{z.replace("_", " ")}</option>)}
             </Select>
-            {fields.timezone ? <p className="text-sm text-danger">{fields.timezone}</p> : null}
+            {fields.timezone ? <p className="text-sm text-danger">{fields.timezone}</p>
+              : <p className="text-sm text-faint">Where the shop is. It decides when &quot;today&quot; starts.</p>}
           </div>
         </div>
       </fieldset>
@@ -206,8 +210,15 @@ function CameraStep({ progress, onDone }: { progress: Progress; onDone: (p: Prog
             </p>
           ) : null}
         </div>
-        <TestPicture orgId={progress.orgId!} cameraId={cameraId}
-          disabled={!counting ? "The test picture works once the camera is counting." : null} />
+        {counting ? (
+          <div>
+            <LivePicture orgId={progress.orgId!} cameraId={cameraId} name={cam?.name ?? name} kind="stream" />
+            <p className="mt-2 max-w-[62ch] text-sm text-muted">
+              The live picture of this camera, with people blurred. Nothing is recorded. The owner can change this in
+              Settings, Privacy. Put up a sign at the camera so visitors know it counts.
+            </p>
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-3 pt-2">
           <Button size="lg" onClick={() => onDone({ ...progress, step: 2, cameraId })} data-testid="setup-camera-next">
             Continue

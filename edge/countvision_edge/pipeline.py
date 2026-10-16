@@ -43,8 +43,8 @@ class FrameResult:
     tracks: list[TrackedObject]
     events: list[Event]
     proc_ms: float
-    # Boxes the detector found in this frame (after the class filter), including objects that
-    # are not yet confirmed tracks. Used only to pixelate people in the preview.
+    # Boxes the detector found in this frame (ALL classes, before the class filter), including
+    # objects that are not yet confirmed tracks. Used only to pixelate people in the preview.
     boxes: np.ndarray = field(default_factory=lambda: np.zeros((0, 4), dtype=np.float32))
 
 
@@ -187,7 +187,8 @@ class CameraPipeline:
         else:
             self.engine.set_frame_size(frame.size)
 
-        detections = self._filter(self.detector.detect(frame.image))
+        raw = self.detector.detect(frame.image)
+        detections = self._filter(raw)
         tracks = self.tracker.update(detections, frame.media_ts, frame.ts)
         if self._last_ts is None:
             dt = self._nominal_dt
@@ -206,7 +207,9 @@ class CameraPipeline:
         elapsed = time.perf_counter() - started
         self.scheduler.record_processing(elapsed)
         self.heartbeat.frame_processed(elapsed)
-        return FrameResult(frame, len(detections), tracks, events, elapsed * 1000.0, detections.xyxy)
+        # ALL detected boxes (not only the counted classes): a car park camera must still
+        # pixelate the people walking through it in the live picture.
+        return FrameResult(frame, len(detections), tracks, events, elapsed * 1000.0, raw.xyxy)
 
     def _filter(self, detections: Detections) -> Detections:
         if self._class_ids is None or len(detections) == 0:

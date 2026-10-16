@@ -40,6 +40,7 @@ export interface StageProps {
   readOnly: boolean;
   aspect: number; // width / height of the camera picture
   image: string | null;
+  imageAlt?: string;
   onImageSize?: (w: number, h: number) => void;
   today: Record<string, { in: number; out: number }>;
   pulses: Record<string, number>; // line name -> counter (changes on every crossing)
@@ -267,8 +268,8 @@ export function CameraStage(props: StageProps) {
     <div ref={wrap} className="relative w-full select-none overflow-hidden rounded-[var(--radius-s)] border border-rule bg-[#0a1218]"
       style={{ aspectRatio: String(aspect) }} data-testid="stage">
       {image ? (
-        // eslint-disable-next-line @next/next/no-img-element -- a private, short-lived snapshot (no optimisation)
-        <img src={image} alt="Camera snapshot, people pixelated" className="absolute inset-0 size-full object-fill"
+        // eslint-disable-next-line @next/next/no-img-element -- a private snapshot or live stream (no optimisation)
+        <img src={image} alt={props.imageAlt ?? "Camera snapshot, people pixelated"} className="absolute inset-0 size-full object-fill"
           draggable={false} onLoad={(e) => props.onImageSize?.(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)} />
       ) : (
         <div aria-hidden className="absolute inset-0 cv-grid" />

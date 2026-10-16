@@ -277,6 +277,7 @@ export interface CameraDetail {
   frame_width: number | null;
   frame_height: number | null;
   today: Record<string, { in: number; out: number }>;
+  device_builtin?: boolean; // CountVision Local: a camera of this computer (live picture)
 }
 
 export interface SnapshotStatus { request_id: string; status: "pending" | "ready" | "error"; message: string | null }

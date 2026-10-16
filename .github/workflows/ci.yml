@@ -183,9 +183,11 @@ jobs:
           retention-days: 7
 
   local:
-    # CountVision Local (CV_EDITION=local): plain PostgreSQL 16 and NO Redis/Celery. API tests of the
-    # local edition, then a browser test of a fresh installation with the REAL edge agent: setup
-    # wizard -> camera (MJPEG test stream) -> line -> live count -> licence key -> backup + restore.
+    # CountVision Local (CV_EDITION=local): API tests of the local edition (plain PostgreSQL 16, NO
+    # Redis/Celery), then the REAL desktop launcher (countvision-desktop --no-window) starts its own
+    # PostgreSQL, the API, the web app and the edge agent, and a browser test goes through a fresh
+    # installation: setup wizard -> camera (MJPEG test stream) -> live picture -> line -> live count ->
+    # privacy setting -> licence key -> backup + restore.
     runs-on: ubuntu-latest
     services:
       db:
@@ -211,62 +213,91 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: cloud/web/package-lock.json
-      - name: Install API + edge engine, pg_dump 16 (backups), ffmpeg
+      - name: Install API + edge engine + desktop launcher, PostgreSQL 16 (server binaries for the launcher), ffmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg postgresql-client-16
-          pip install -e "cloud/api[dev]" -e "edge[onnx]"
-      - name: Lint local tests
-        run: ruff check cloud/api
+          sudo apt-get install -y --no-install-recommends ffmpeg postgresql-16 postgresql-client-16
+          pip install -e "cloud/api[dev]" -e "edge[onnx]" -e "desktop[dev]"
+      - name: Lint local + desktop code
+        run: ruff check cloud/api desktop
       - name: API tests of the local edition (no Redis running)
         working-directory: cloud/api
         run: python -m pytest -q tests_local
+      - name: Desktop launcher tests
+        working-directory: desktop
+        run: python -m pytest -q
       - name: Build web app
         working-directory: cloud/web
         run: |
           npm ci --no-audit --no-fund
           npm run build
-      - name: Start a fresh CountVision Local (API, web, edge agent like the launcher, test camera)
+      - name: Start a fresh CountVision Local with the desktop launcher (+ test camera)
         run: |
           python - <<'PY'
+          import json
           from pathlib import Path
           from countvision_cloud.local import licence
           key = licence.new_private_key()
           Path("/tmp/ci_licence_private.pem").write_bytes(licence.private_key_pem(key))
-          Path("/tmp/ci_licence_public.txt").write_text(licence.public_text_of(key))
+          home = Path("/tmp/cvdesk"); home.mkdir()
+          # test settings for the API: development (accepts the CI licence key), the demo detector
+          (home / "desktop.json").write_text(json.dumps({"api_env": {
+              "CV_ENVIRONMENT": "development", "CV_VIDEO_DETECTOR": "blobs",
+              "CV_LICENCE_PUBLIC_KEY": licence.public_text_of(key)}}))
           PY
-          export CV_EDITION=local CV_ENVIRONMENT=development CV_DATA_DIR=/tmp/cvlocal CV_VIDEO_DETECTOR=blobs
-          export CV_DATABASE_URL=postgresql+psycopg://countvision:countvision@localhost:5433/countvision
-          export CV_REDIS_URL=redis://127.0.0.1:1/0  # nothing there
-          export CV_LICENCE_PUBLIC_KEY=$(cat /tmp/ci_licence_public.txt)
           countvision-cloud licence-create --key /tmp/ci_licence_private.pem --customer "Café Sonne GmbH" \
             --cameras 4 --valid-until 2030-12-31 --out /tmp/ci_licence.txt > /dev/null
           countvision-edge demo --out /tmp/demo --no-video
           nohup python cloud/web/e2e-local/mjpeg_server.py /tmp/demo/demo_scene.avi 8090 > /tmp/mjpeg.log 2>&1 &
-          countvision-cloud migrate
-          nohup countvision-cloud serve --port 8001 > /tmp/api.log 2>&1 &
-          (cd cloud/web && nohup npm start > /tmp/web.log 2>&1 &)
-          # the launcher's job (Phase 4.5 B): start the edge agent when the setup wizard wrote its files,
-          # WITHOUT the API's CV_ variables (the edge reads CV_DATA_DIR too)
-          nohup bash -c 'until [ -f /tmp/cvlocal/edge/edge.yaml ]; do sleep 1; done; \
-            exec env -i PATH="$PATH" HOME="$HOME" countvision-edge run --config /tmp/cvlocal/edge/edge.yaml' \
-            > /tmp/edge.log 2>&1 &
-          for i in $(seq 1 30); do curl -fs localhost:3000/api/edition && break; sleep 2; done
+          touch /tmp/cvdesk-model.onnx  # the demo detector needs no model; the launcher wants the file
+          countvision-desktop --home /tmp/cvdesk --model /tmp/cvdesk-model.onnx --check
+          nohup countvision-desktop --home /tmp/cvdesk --model /tmp/cvdesk-model.onnx --no-window \
+            > /tmp/desktop.log 2>&1 &
+          for i in $(seq 1 60); do grep -q "CountVision is running" /tmp/desktop.log && break; sleep 2; done
+          cat /tmp/desktop.log
+          curl -fs localhost:3000/api/edition
       - name: Browser test (fresh installation to backup and restore)
         working-directory: cloud/web
         run: |
           npx playwright install --with-deps chromium
           CV_E2E_LICENCE=$(cat /tmp/ci_licence.txt) CV_E2E_MJPEG=http://127.0.0.1:8090/video \
             npx playwright test -c playwright.local.config.ts
+      - name: Clean stop (countvision-desktop --quit)
+        run: |
+          countvision-desktop --home /tmp/cvdesk --quit
+          sleep 5
+          grep -q "CountVision stopped" /tmp/cvdesk/logs/launcher.log
+          grep -q "Stop requested" /tmp/cvdesk/logs/edge.log
+          if pgrep -f "countvision_cloud.cli serve" || pgrep -f "cvdesk/db"; then echo "still running"; exit 1; fi
       - name: Logs
         if: failure()
-        run: tail -n 80 /tmp/api.log /tmp/web.log /tmp/edge.log /tmp/mjpeg.log || true
+        run: tail -n 80 /tmp/desktop.log /tmp/cvdesk/logs/*.log /tmp/mjpeg.log || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report-local
           path: cloud/web/playwright-report
           retention-days: 7
+
+  desktop-windows:
+    # The desktop launcher and the live camera picture on Windows (paths, windowless child processes,
+    # stop files). The full Windows installer comes in Phase 4.5 C.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: edge/pyproject.toml
+      - name: Install edge engine + desktop launcher
+        run: pip install -e "edge[dev]" -e "desktop[dev]"
+      - name: Desktop launcher tests
+        working-directory: desktop
+        run: python -m pytest -q
+      - name: Live picture tests
+        working-directory: edge
+        run: python -m pytest -q tests/test_live_view.py
 
   cloud-docker:
     # The full local stack (cloud/compose.yaml): builds images, starts everything, signs up

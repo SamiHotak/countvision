@@ -416,6 +416,7 @@ class CameraDetailOut(BaseModel):
     frame_width: int | None
     frame_height: int | None
     today: dict[str, dict[str, int]] = {}
+    device_builtin: bool = False  # CountVision Local: a camera of this computer (live picture)
 
 
 class SnapshotOut(BaseModel):
