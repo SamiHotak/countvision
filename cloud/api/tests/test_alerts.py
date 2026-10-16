@@ -335,7 +335,9 @@ def test_webhook_retries_then_fails(app, client, hook):
 def test_hourly_counts_webhook(app, client, hook):
     org, site, dev, body, me = verified_setup(client, app)
     channel(client, org, kind="webhook", name="BI", url=hook.url, events=["counts.hourly"])
-    now = utcnow()
+    # half past the hour: in the first 5 minutes of an hour (the send delay) "+5 min" would reach the
+    # NEXT finished hour and the test failed (CI run on 2026-10-16 at 17:0x UTC)
+    now = utcnow().replace(minute=30, second=0, microsecond=0)
     start, end = webhook_events._last_hour("Europe/Berlin", now + timedelta(hours=1))
     dev.post("/api/device/ingest", json=batch("h", line_counts=[
         lc("door", int(start.timestamp()) + 120, "entrance", "*", 7, 2)], coverage=cov("door", int(start.timestamp()), 5)))

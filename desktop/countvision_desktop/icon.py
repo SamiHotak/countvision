@@ -50,8 +50,10 @@ def write_assets(folder: Path = ASSETS) -> list[Path]:
     folder.mkdir(parents=True, exist_ok=True)
     big = draw(256)
     ico = folder / "icon.ico"
+    # BMP frames, not PNG: Windows Forms' System.Drawing.Icon (the pywebview window on Windows)
+    # cannot read PNG-compressed icon frames ("must be a picture that can be used as a Icon").
     big.save(ico, sizes=[(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (128, 128),
-                         (256, 256)])
+                         (256, 256)], bitmap_format="bmp")
     png = folder / "icon.png"
     big.save(png)
     return [ico, png]

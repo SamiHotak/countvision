@@ -407,3 +407,15 @@ def test_remember_keeps_the_choices_for_the_next_start(tmp_path, monkeypatch):
     assert again.model == tmp_path / "m.onnx" and not again.manages_postgres
     other = config.load(home=home, data_dir=tmp_path / "new")  # an argument wins
     assert other.data_dir == tmp_path / "new"
+
+
+def test_windows_icon_has_only_bitmap_frames():
+    """System.Drawing.Icon (the window on Windows) cannot read PNG-compressed frames."""
+    import struct
+
+    data = (Path(window.__file__).parent / "assets" / "icon.ico").read_bytes()
+    count = struct.unpack("<HHH", data[:6])[2]
+    assert count >= 5
+    for i in range(count):
+        offset = struct.unpack("<I", data[6 + 16 * i + 12:6 + 16 * i + 16])[0]
+        assert data[offset:offset + 4] != b"\x89PNG"

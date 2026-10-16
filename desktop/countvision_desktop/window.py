@@ -137,7 +137,8 @@ class WebviewApp:
         with contextlib.suppress(AttributeError):
             events.maximized += lambda: self._remember(maximized=True)
             events.restored += lambda: self._remember(maximized=False)
-        icon = Path(__file__).resolve().parent / "assets" / "icon.png"
+        # Windows wants an .ico file (System.Drawing.Icon); GTK/Qt take a .png
+        icon = Path(__file__).resolve().parent / "assets" / ("icon.ico" if IS_WINDOWS else "icon.png")
         self.webview.start(self._started, private_mode=False, storage_path=str(self.cfg.home / "webview"),
                            icon=str(icon) if icon.is_file() else None)
         # the window is gone: make sure everything has stopped
