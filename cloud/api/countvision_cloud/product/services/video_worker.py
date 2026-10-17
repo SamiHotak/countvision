@@ -14,6 +14,7 @@ import csv
 import io
 import json
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -118,7 +119,8 @@ def probe(job_id: uuid.UUID | str) -> None:
 
 
 class _Writer:
-    """Annotated video as H.264 MP4 through ffmpeg (plays in every browser). Without ffmpeg: MP4V
+    """Annotated video as H.264 MP4 through ffmpeg (plays in every browser). Without ffmpeg on
+    Windows (CountVision Local): H.264 through Windows' own Media Foundation encoder. Otherwise MP4V
     with OpenCV (download only, browsers may not play it)."""
 
     def __init__(self, path: Path, fps: float) -> None:
@@ -184,11 +186,22 @@ class _Writer:
                 "+faststart",
                 str(self.path),
             ]
-            self._proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            flags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW: no console window on Windows
+            self._proc = subprocess.Popen(
+                cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=flags
+            )
             self.codec = "h264"
-        else:
-            self._cv = cv2.VideoWriter(str(self.path), cv2.VideoWriter_fourcc(*"mp4v"), self.fps, (w, h))
-            self.codec = "mp4v"
+            return
+        if os.name == "nt":
+            # Media Foundation ships with Windows 10/11: H.264 that WebView2 / Edge can play
+            h264 = cv2.VideoWriter_fourcc(*"H264")
+            msmf = cv2.VideoWriter(str(self.path), cv2.CAP_MSMF, h264, self.fps, (w, h))
+            if msmf.isOpened():
+                self._cv, self.codec = msmf, "h264"
+                return
+            msmf.release()
+        self._cv = cv2.VideoWriter(str(self.path), cv2.VideoWriter_fourcc(*"mp4v"), self.fps, (w, h))
+        self.codec = "mp4v"
 
     def close(self) -> None:
         if self._proc is not None:

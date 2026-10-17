@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -25,6 +26,7 @@ def gpu_stats() -> tuple[float | None, float | None]:
         out = subprocess.run(
             [exe, "--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=3, check=True,
+            creationflags=0x08000000 if os.name == "nt" else 0,  # CREATE_NO_WINDOW: no console flashing up
         ).stdout.strip().splitlines()[0]
         util, mem = (float(v.strip()) for v in out.split(",")[:2])
         return util, mem

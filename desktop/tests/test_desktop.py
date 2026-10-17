@@ -419,3 +419,127 @@ def test_windows_icon_has_only_bitmap_frames():
     for i in range(count):
         offset = struct.unpack("<I", data[6 + 16 * i + 12:6 + 16 * i + 16])[0]
         assert data[offset:offset + 4] != b"\x89PNG"
+
+
+# --- the installed program (Phase 4.5 C) ------------------------------------------------------------
+
+
+def fake_install(tmp_path: Path, version: str = "0.2.0+abc1234") -> Path:
+    install = tmp_path / "Program Files" / "CountVision"
+    (install / "web").mkdir(parents=True)
+    (install / "web" / "server.js").write_text("// next standalone")
+    (install / "python").mkdir()
+    (install / "models").mkdir()
+    (install / "models" / "yolox_tiny.onnx").write_bytes(b"x")
+    (install / "version.txt").write_text(version + "\n")
+    return install
+
+
+def test_installed_layout_ignores_settings_remembered_from_source(tmp_path, monkeypatch):
+    """Ezat tested from source with --remember (Docker database, C:\\CountVisionLocal). The installed
+    app must start with its own PostgreSQL and data folder anyway."""
+    for name in ("CV_DESKTOP_DATABASE_URL", "CV_PG_BIN_DIR", "CV_VIDEO_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "desktop.json").write_text(json.dumps({
+        "data_dir": str(tmp_path / "CountVisionLocal"), "allow_network": True,
+        "database_url": "postgresql+psycopg://countvision:countvision@127.0.0.1:5433/countvision_local"}))
+    install = fake_install(tmp_path)
+    cfg = config.load(home=home, install_dir=install)
+    assert cfg.installed and cfg.web_mode == "standalone" and cfg.web_dir == install / "web"
+    assert cfg.database_url is None and cfg.manages_postgres and cfg.data_dir == home / "data"
+    assert cfg.model == install / "models" / "yolox_tiny.onnx"
+    assert cfg.settings.allow_network  # the person's own choices stay
+    assert cfg.version == "0.2.0+abc1234"
+    # remembered FOR this program folder: used
+    cfg = config.load(home=home, install_dir=install, data_dir=tmp_path / "elsewhere")
+    cfg.remember()
+    assert config.load(home=home, install_dir=install).data_dir == tmp_path / "elsewhere"
+    # from source (no remember_install noted yet): still used, as before
+    assert config.remembered({"data_dir": "x"}, tmp_path / "repo") == {"data_dir": "x"}
+
+
+def test_update_makes_a_backup_before_the_database_update(cfg, tmp_path, monkeypatch):
+    from countvision_desktop import launcher as launcher_mod
+
+    cfg.install_dir = fake_install(tmp_path, "0.3.0+new")
+    calls = []
+    monkeypatch.setattr(launcher_mod, "run_once", lambda cmd, **kw: calls.append(cmd) or 0)
+    launcher = Launcher(cfg)
+    assert launcher.update_pending()  # no version noted yet (installed over an older one)
+    cfg.settings.extra["app_version"] = "0.2.0+old"
+    launcher._backup_before_update()
+    assert calls[0][-6:] == ["countvision_cloud.cli", "backup", "--prefix", "before-update", "--kind",
+                             "before-update"]
+    keys = [s.key for s in launcher.status.steps]
+    assert keys.index("backup") == keys.index("migrate") - 1
+    assert launcher.status.steps[keys.index("backup")].state == "done"
+    launcher._remember_version()
+    assert json.loads(cfg.settings_path.read_text())["app_version"] == "0.3.0+new"
+    assert not launcher.update_pending()
+    # a failed backup stops the start: the data is never updated without one
+    cfg.settings.extra["app_version"] = "0.2.0+old"
+    monkeypatch.setattr(launcher_mod, "run_once", lambda cmd, **kw: 1)
+    with pytest.raises(launcher_mod.StartError, match="backup before the update failed"):
+        launcher._backup_before_update()
+    assert [s.key for s in launcher.status.steps].count("backup") == 1
+
+
+def test_hidden_start_shows_only_the_tray_until_opened_or_a_problem(cfg, monkeypatch):
+    fake = FakeWebview()
+    launcher = FakeLauncher(cfg)
+    app = window.WebviewApp(launcher, fake, hidden=True)
+
+    class FakeTray:
+        def notify(self, text):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(window.Tray, "create", classmethod(lambda cls, *a, **k: FakeTray()))
+    runner = threading.Thread(target=app.run)
+    runner.start()
+    assert fake.started.wait(5)
+    w = fake.window
+    assert w.kw["hidden"] is True
+    w.hidden = True
+    launcher.set("ready")
+    assert w.hidden and w.loaded == ["http://localhost:3000"]  # the app loads, the window stays hidden
+    app.show()  # tray "Open CountVision" / a second start
+    assert not w.hidden
+    app.quit()
+    runner.join(10)
+
+    # a problem at logon is shown at once; without a tray icon the window is never invisible
+    fake2, launcher2 = FakeWebview(), FakeLauncher(cfg)
+    app2 = window.WebviewApp(launcher2, fake2, hidden=True)
+    runner = threading.Thread(target=app2.run)
+    runner.start()
+    assert fake2.started.wait(5)
+    fake2.window.hidden = True
+    launcher2.set("error")
+    assert not fake2.window.hidden
+    app2.quit()
+    runner.join(10)
+
+
+def test_windows_setup_matches_the_desktop_app():
+    """The setup script and the launcher agree on names and folders."""
+    root = Path(__file__).resolve().parents[2]
+    iss = (root / "packaging" / "windows" / "CountVision.iss").read_text(encoding="utf-8-sig")
+    build = (root / "packaging" / "windows" / "build.ps1").read_text(encoding="utf-8")
+    assert "{commonappdata}\\{#AppName}" in iss and '#define AppName "CountVision"' in iss
+    assert config.APP_NAME == "CountVision"  # default home C:\ProgramData\CountVision
+    assert f'#define AppUserModelID "{window.APP_ID}"' in iss
+    assert 'Parameters: "--hidden"' in iss  # autostart at logon: tray only
+    assert "{userstartup}" in iss and "Tasks: autostart" in iss
+    for part in ("python", "web", "node", "pgsql", "models"):
+        assert f'Name: "{{app}}\\{part}"' in iss  # replaced completely on an update
+    for produced in ("CountVision.exe", "CountVision.ico", "LICENSE.txt", "version.txt", "THIRD-PARTY-NOTICES.txt",
+                     'Join-Path $Stage "models"', 'Join-Path $Stage "web"', 'Join-Path $Stage "pgsql"'):
+        assert produced in build, produced
+    assert "--quit" in (root / "packaging" / "windows" / "scripts" / "stop-countvision.ps1").read_text()
+    for script in (root / "packaging" / "windows").rglob("*.ps1"):
+        script.read_text(encoding="ascii")  # Windows PowerShell 5.1 reads files without BOM as ANSI

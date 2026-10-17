@@ -557,6 +557,12 @@ def test_backup_and_restore(app, client, tmp_path):
     stick.mkdir()
     assert client.post(f"/api/orgs/{org_id}/backups", json={"folder": str(stick)}).status_code == 201
     assert len(list(stick.glob("*.cvbackup"))) == 1
+    # the desktop app's backup before an update (CLI): shown as made automatically
+    from countvision_cloud import cli
+
+    assert cli.main(["backup", "--prefix", "before-update", "--kind", "before-update"]) == 0
+    kinds = {b["name"].split("-20")[0]: b["kind"] for b in client.get(f"/api/orgs/{org_id}/backups").json()["backups"]}
+    assert kinds["before-update"] == "before-update" and kinds["CountVision-backup"] == "manual"
 
     # changes after the backup
     client.post(f"/api/orgs/{org_id}/sites", json={"name": "Second shop"})

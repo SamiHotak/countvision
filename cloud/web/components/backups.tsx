@@ -14,7 +14,7 @@ import { api, errorText, fmtDateTime, type Org } from "@/lib/api";
 
 interface BackupFile {
   name: string; size: number; created_at: string | null; version: string | null; organization: string | null;
-  kind: "manual" | "before-restore" | "upload" | string;
+  kind: "manual" | "before-restore" | "before-update" | "upload" | string;
 }
 interface BackupList { folder: string; default_folder: string; free_bytes: number | null; backups: BackupFile[] }
 
@@ -108,6 +108,7 @@ export function Backups({ org }: { org: Org }) {
                     <span className="block truncate">{b.created_at ? fmtDateTime(b.created_at) : b.name}</span>
                     <span className="block truncate text-sm text-faint">
                       {b.kind === "before-restore" ? "Made automatically before a restore. " : ""}
+                      {b.kind === "before-update" ? "Made automatically before an update. " : ""}
                       {b.organization ?? "?"}, {mb(b.size)}{b.version ? `, version ${b.version}` : ""}
                     </span>
                   </span>

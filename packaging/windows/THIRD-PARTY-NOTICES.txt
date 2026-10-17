@@ -1,0 +1,59 @@
+CountVision Local - third-party software
+=========================================
+
+CountVision itself is licensed under the GNU Affero General Public License v3.0 or later
+(LICENSE.txt). Source code: https://github.com/SamiHotak/countvision
+
+This program folder also contains the following programs and libraries. Each keeps its own
+licence; the full licence texts are next to them (see the paths) or in the Python package
+metadata (python\Lib\site-packages\<package>.dist-info\).
+
+Runtimes
+--------
+* Python 3.12 (embeddable)            PSF License                python\LICENSE.txt
+* Node.js                             MIT and others             node\LICENSE.txt
+* PostgreSQL 16 (binaries by EDB)     PostgreSQL License         https://www.postgresql.org/about/licence/
+  PostgreSQL is Copyright (c) 1996-2026, The PostgreSQL Global Development Group, and
+  Portions Copyright (c) 1994, The Regents of the University of California. Permission to use,
+  copy, modify, and distribute this software and its documentation for any purpose, without fee,
+  and without a written agreement is hereby granted, provided that the above copyright notice and
+  this paragraph and the following two paragraphs appear in all copies. IN NO EVENT SHALL THE
+  UNIVERSITY OF CALIFORNIA BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR
+  CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS
+  DOCUMENTATION, EVEN IF THE UNIVERSITY OF CALIFORNIA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
+  DAMAGE. THE UNIVERSITY OF CALIFORNIA SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE
+  SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" BASIS, AND THE UNIVERSITY OF CALIFORNIA HAS NO
+  OBLIGATIONS TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+  The PostgreSQL binaries include libraries such as OpenSSL (Apache-2.0), zlib (zlib licence),
+  ICU (Unicode licence), libxml2 (MIT), lz4 (BSD), zstd (BSD); see pgsql\share\ for their notices.
+
+Detector model
+--------------
+* YOLOX-Tiny (Megvii)                 Apache-2.0 (code and weights)   models\yolox_tiny.onnx
+  https://github.com/Megvii-BaseDetection/YOLOX
+
+Main Python packages (python\Lib\site-packages)
+-----------------------------------------------
+* FastAPI, Starlette, Pydantic, Uvicorn, SQLAlchemy, Alembic, httpx   MIT / BSD
+* psycopg 3 (LGPL-3.0, used unmodified as a separate, replaceable library)
+* ONNX Runtime (MIT), OpenCV (Apache-2.0), NumPy (BSD), supervision (MIT), trackers (Apache-2.0)
+* ReportLab (BSD), cryptography (Apache-2.0 / BSD), argon2-cffi (MIT), Celery (BSD, not started
+  in this edition), redis-py (MIT, not used in this edition)
+* pywebview (BSD-3-Clause) with pythonnet (MIT): the CountVision window
+* pystray (LGPL-3.0, used unmodified as a separate, replaceable library): the tray icon
+* Pillow (HPND)
+LGPL libraries: you may replace them with your own version by replacing their folder in
+python\Lib\site-packages.
+
+The app (web\)
+--------------
+* Next.js, React (MIT) and the packages listed in web\node_modules (their licences are in each
+  package folder). Font: Barlow, SIL Open Font License 1.1.
+
+Installed by the setup when missing (Microsoft, free to redistribute)
+---------------------------------------------------------------------
+* Microsoft Visual C++ 2015-2022 Redistributable (x64)
+* Microsoft Edge WebView2 Runtime (downloaded by Microsoft's bootstrapper)
+
+Setup program: Inno Setup, Copyright (C) 1997-2026 Jordan Russell and Martijn Laan.

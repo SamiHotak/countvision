@@ -281,7 +281,7 @@ jobs:
 
   desktop-windows:
     # The desktop launcher and the live camera picture on Windows (paths, windowless child processes,
-    # stop files). The full Windows installer comes in Phase 4.5 C.
+    # stop files). The installed program is tested by the windows-installer job.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -298,6 +298,111 @@ jobs:
       - name: Live picture tests
         working-directory: edge
         run: python -m pytest -q tests/test_live_view.py
+
+  windows-installer:
+    # CountVision Local for shops: builds CountVision-Local-Setup-<version>.exe (embeddable Python 3.12,
+    # PostgreSQL 16, Node.js, the app, YOLOX-Tiny, CountVision.exe, Inno Setup), installs it silently
+    # like a customer, runs the smoke test against the installed program (setup wizard, login, camera
+    # counting with the bundled model, live picture, video analysis, PDF, backup), stops it, installs it
+    # again over the running program (update: stopped cleanly, backup before the database update, data
+    # kept), and uninstalls it (data kept). The setup.exe is a downloadable artifact of this run.
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: powershell
+    env:
+      APP: C:\Program Files\CountVision
+      CVDATA: C:\ProgramData\CountVision
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cloud/web/package-lock.json
+      - name: Cache downloads (Python, PostgreSQL, Microsoft runtimes)
+        uses: actions/cache@v4
+        with:
+          path: build/windows/downloads
+          key: win-downloads-${{ hashFiles('packaging/windows/build.ps1') }}
+      - name: Build the setup
+        run: .\packaging\windows\build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CountVision-Local-Setup
+          path: dist/CountVision-Local-Setup-*
+          retention-days: 14
+          compression-level: 0
+      - name: Install silently (like a customer, with desktop icon and autostart)
+        run: |
+          $setup = (Get-ChildItem dist\CountVision-Local-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$env:RUNNER_TEMP\install1.log", "/TASKS=desktopicon,autostart" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\install1.log" -Tail 80; throw "setup exit code $($p.ExitCode)" }
+          foreach ($f in @("$env:APP\CountVision.exe", "$env:APP\python\pythonw.exe", "$env:APP\node\node.exe", "$env:APP\pgsql\bin\pg_ctl.exe", "$env:APP\web\server.js", "$env:APP\models\yolox_tiny.onnx", "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\CountVision.lnk", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\CountVision.lnk")) {
+            if (-not (Test-Path -LiteralPath $f)) { throw "missing after install: $f" }
+          }
+          netsh advfirewall firewall show rule name="CountVision app (shop network)"
+          if ($LASTEXITCODE -ne 0) { throw "firewall rule missing" }
+          $acl = (icacls $env:CVDATA) -join "`n"
+          Write-Output $acl
+          if ($acl -match "BUILTIN\\Users|Authenticated Users|Everyone") { throw "the data folder is readable by other Windows users" }
+          Get-Content "$env:APP\version.txt"
+      - name: Demo count + test camera (with the installed Python)
+        run: |
+          & "$env:APP\python\python.exe" -m countvision_edge demo --out C:\cvsmoke --no-video
+          if ($LASTEXITCODE -ne 0) { throw "demo count failed" }
+          # the test camera runs with the CI machine's Python: the update below replaces the program folder
+          python -m pip install --disable-pip-version-check -q opencv-python-headless
+          Start-Process python -ArgumentList "cloud\web\e2e-local\mjpeg_server.py", "C:\cvsmoke\demo_scene.avi", "8090" -WindowStyle Hidden
+          & "$env:APP\python\python.exe" -c "import webview, clr, pystray; print('window parts load')"
+          if ($LASTEXITCODE -ne 0) { throw "window parts do not load" }
+          & "$env:APP\python\python.exe" -m countvision_desktop --check
+          if ($LASTEXITCODE -ne 0) { throw "--check failed" }
+      - name: Start CountVision.exe (no window on the CI machine) + smoke test of a fresh installation
+        run: |
+          Start-Process "$env:APP\CountVision.exe" -ArgumentList "--no-window"
+          python packaging\windows\smoke_test.py fresh --state "$env:RUNNER_TEMP\smoke.json" --video C:\cvsmoke\demo_scene.avi
+          if ($LASTEXITCODE -ne 0) { throw "smoke test failed" }
+      - name: Clean stop (CountVision.exe --quit)
+        run: |
+          $p = Start-Process "$env:APP\CountVision.exe" -ArgumentList "--quit" -Wait -PassThru
+          Start-Sleep -Seconds 3
+          $left = Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$env:APP\*" }
+          if ($left) { $left | Format-Table ProcessId, Name, CommandLine -AutoSize | Out-String -Width 300; throw "still running after --quit" }
+          if (-not (Select-String -Path "$env:CVDATA\logs\launcher.log" -Pattern "CountVision stopped" -Quiet)) { throw "no clean stop in launcher.log" }
+          if (-not (Select-String -Path "$env:CVDATA\logs\edge.log" -Pattern "Stop requested" -Quiet)) { throw "the counting service was not stopped cleanly" }
+      - name: Update - install again over the RUNNING program, then start it
+        run: |
+          Start-Process "$env:APP\CountVision.exe" -ArgumentList "--no-window"
+          python packaging\windows\smoke_test.py wait
+          $setup = (Get-ChildItem dist\CountVision-Local-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$env:RUNNER_TEMP\install2.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\install2.log" -Tail 80; throw "update setup exit code $($p.ExitCode)" }
+          # pretend the installed version was older, so this start is an update (backup first)
+          python -c "import json, pathlib; p = pathlib.Path(r'$env:CVDATA\desktop.json'); d = json.loads(p.read_text()); d['app_version'] = '0.0.0'; p.write_text(json.dumps(d))"
+          Start-Process "$env:APP\CountVision.exe" -ArgumentList "--no-window"
+          python packaging\windows\smoke_test.py after-update --state "$env:RUNNER_TEMP\smoke.json"
+          if ($LASTEXITCODE -ne 0) { throw "smoke test after the update failed" }
+      - name: Uninstall silently (keeps the data)
+        run: |
+          Start-Process "$env:APP\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          $deadline = (Get-Date).AddMinutes(4)
+          while ((Test-Path -LiteralPath "$env:APP") -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 3 }
+          if (Test-Path -LiteralPath "$env:APP") { Get-ChildItem -Recurse "$env:APP" | Select-Object -First 20; throw "program folder still there" }
+          if (-not (Test-Path -LiteralPath "$env:CVDATA\db\PG_VERSION")) { throw "the data was deleted (it must be kept)" }
+          if (Test-Path -LiteralPath "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\CountVision.lnk") { throw "autostart still there" }
+          netsh advfirewall firewall show rule name="CountVision app (shop network)" | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw "firewall rule still there" }
+          Write-Output "uninstalled, data kept"
+      - name: Logs
+        if: failure()
+        run: |
+          Get-ChildItem "$env:CVDATA\logs" -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "===== $($_.Name)"; Get-Content $_.FullName -Tail 80 }
+          Get-ChildItem "$env:RUNNER_TEMP\install*.log" -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "===== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
 
   cloud-docker:
     # The full local stack (cloud/compose.yaml): builds images, starts everything, signs up

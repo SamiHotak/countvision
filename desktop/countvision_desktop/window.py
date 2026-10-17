@@ -33,6 +33,17 @@ log = logging.getLogger(__name__)
 
 DEFAULT_SIZE = (1280, 820)
 MIN_SIZE = (900, 600)
+APP_ID = "CountVision.Local"  # Windows groups the window with the CountVision shortcut (taskbar, pinning)
+
+
+def set_app_id() -> None:
+    """Windows: show the window as "CountVision" (its own taskbar button and icon), not as Python."""
+    if not IS_WINDOWS:
+        return
+    with contextlib.suppress(Exception):
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)  # type: ignore[attr-defined]
 
 
 def open_folder(path: Path) -> None:
@@ -97,8 +108,9 @@ class Tray:
 class WebviewApp:
     """The native window (pywebview)."""
 
-    def __init__(self, launcher: Launcher, webview_module) -> None:
+    def __init__(self, launcher: Launcher, webview_module, *, hidden: bool = False) -> None:
         self.launcher = launcher
+        self.hidden = hidden  # started at logon: only the tray icon, the window opens from there
         self.cfg: DesktopConfig = launcher.cfg
         self.webview = webview_module
         self.window = None
@@ -129,7 +141,7 @@ class WebviewApp:
             "CountVision", html=page(self.launcher.status.as_dict()), js_api=self.Api(self),
             width=max(width, MIN_SIZE[0]), height=max(height, MIN_SIZE[1]), x=geo.get("x"), y=geo.get("y"),
             min_size=MIN_SIZE, background_color="#0e1820", maximized=bool(geo.get("maximized")),
-            text_select=True)
+            text_select=True, hidden=self.hidden)
         events = self.window.events
         events.closing += self._on_closing
         events.resized += self._on_resized
@@ -139,8 +151,10 @@ class WebviewApp:
             events.restored += lambda: self._remember(maximized=False)
         # Windows wants an .ico file (System.Drawing.Icon); GTK/Qt take a .png
         icon = Path(__file__).resolve().parent / "assets" / ("icon.ico" if IS_WINDOWS else "icon.png")
+        # Windows: only Edge WebView2. Without it pywebview would fall back to an old Internet Explorer
+        # engine that cannot show the app; the error makes run_window use Edge app mode instead.
         self.webview.start(self._started, private_mode=False, storage_path=str(self.cfg.home / "webview"),
-                           icon=str(icon) if icon.is_file() else None)
+                           icon=str(icon) if icon.is_file() else None, gui="edgechromium" if IS_WINDOWS else None)
         # the window is gone: make sure everything has stopped
         if self.tray is not None:
             self.tray.stop()
@@ -149,11 +163,15 @@ class WebviewApp:
 
     def _started(self) -> None:
         self.tray = Tray.create(self.launcher, on_open=self.show, on_quit=self.quit)
+        if self.hidden and self.tray is None:
+            self.show()  # no tray icon to open it from: never stay invisible
         self.launcher.on_change(self._status)
 
     def _status(self, status: Status) -> None:
         if self.window is None or self.quitting:
             return
+        if status.phase == "error" and self.hidden:
+            self.show()  # a problem at logon must be seen
         if status.phase == "ready" and not self.showing_app:
             self.showing_app = True
             self.window.load_url(self.cfg.app_url)
@@ -193,6 +211,7 @@ class WebviewApp:
     # -- actions ---------------------------------------------------------------------------------
 
     def show(self) -> dict:
+        self.hidden = False
         if self.window is not None:
             with contextlib.suppress(Exception):
                 self.window.show()
@@ -235,8 +254,9 @@ def find_edge() -> Path | None:
 class EdgeAppWindow:
     """Fallback window: Microsoft Edge in app mode (own window, no address bar, own profile)."""
 
-    def __init__(self, launcher: Launcher, edge: Path) -> None:
+    def __init__(self, launcher: Launcher, edge: Path, *, hidden: bool = False) -> None:
         self.launcher = launcher
+        self.hidden = hidden
         self.cfg = launcher.cfg
         self.edge = edge
         self.proc: subprocess.Popen | None = None
@@ -266,7 +286,8 @@ class EdgeAppWindow:
                 print(self.launcher.status.message)
                 self.launcher.stop()
                 return
-        self.open()
+        if not self.hidden or self.tray is None:
+            self.open()
         while not self.quit_event.wait(1.0):
             if self.tray is None and self.proc is not None and self.proc.poll() is not None:
                 break  # no tray icon: closing the window quits
@@ -275,10 +296,12 @@ class EdgeAppWindow:
         self.launcher.stop()
 
 
-def run_window(launcher: Launcher, *, prefer: str = "auto") -> None:
+def run_window(launcher: Launcher, *, prefer: str = "auto", hidden: bool = False) -> None:
     """Show CountVision and block until the person quits. The window registers its "show" and
     "quit" actions on the launcher (``launcher.show_window`` / ``launcher.quit_app``), which a second
-    start of CountVision calls through the control server."""
+    start of CountVision calls through the control server. ``hidden``: start with the tray icon
+    only (autostart at logon); "Open CountVision" in the tray or a second start shows the window."""
+    set_app_id()
     webview = None
     if prefer in ("auto", "webview"):
         try:
@@ -287,7 +310,7 @@ def run_window(launcher: Launcher, *, prefer: str = "auto") -> None:
             log.info("pywebview is not available (%s): using the fallback window", exc)
             webview = None
     if webview is not None:
-        app = WebviewApp(launcher, webview)
+        app = WebviewApp(launcher, webview, hidden=hidden)
         launcher.show_window = app.show
         launcher.quit_app = app.quit
         try:
@@ -299,7 +322,7 @@ def run_window(launcher: Launcher, *, prefer: str = "auto") -> None:
                 return
     edge = find_edge() if prefer in ("auto", "edge", "webview") else None
     if edge is not None:
-        fallback = EdgeAppWindow(launcher, edge)
+        fallback = EdgeAppWindow(launcher, edge, hidden=hidden)
         launcher.show_window = fallback.open
         launcher.quit_app = fallback.quit
         fallback.run()

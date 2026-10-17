@@ -18,8 +18,20 @@ CountVision in **its own window** (no browser, no address bar, no black command 
 * Quit stops everything cleanly: the counting service saves its last minute, the database stops last.
 * Data: `C:\ProgramData\CountVision` (`data\`, `db\`, `logs\`, `desktop.json`).
 
-The installer (setup.exe with Python, Node.js, PostgreSQL and the model inside, desktop icon,
-autostart) is Phase 4.5 Session C. Until then the app runs **from the source code**.
+Shops install it with **one setup.exe** (Python, Node.js, PostgreSQL and the model inside, desktop
+icon, autostart at logon): see [`packaging/windows/README.md`](../packaging/windows/README.md). For
+development it also runs **from the source code** (below).
+
+Installed (`C:\Program Files\CountVision\CountVision.exe`):
+
+* The autostart at logon runs `CountVision.exe --hidden`: only the tray icon, counting starts by
+  itself. A problem at start opens the window so it is seen.
+* After an update the first start makes a backup (`data\backups\before-update-....cvbackup`)
+  before it updates the database (`desktop.json` remembers the version that last started:
+  `app_version`). A failed backup stops the start with a clear message (nothing is changed).
+* Choices saved with `--remember` while testing from the source code (e.g. the Docker database) are
+  ignored by the installed program: it always uses its own PostgreSQL and `C:\ProgramData\CountVision\data`.
+* Logs: tray icon -> Open the log folder (`C:\ProgramData\CountVision\logs`).
 
 ## Run it from the source code on Windows
 
@@ -51,6 +63,7 @@ Other commands:
 ```bat
 .venv\Scripts\countvision-desktop --no-window     REM no window: progress and address in this window, Ctrl+C stops
 .venv\Scripts\countvision-desktop --quit          REM stop a running CountVision cleanly
+.venv\Scripts\countvision-desktop --hidden        REM start with the tray icon only (like the autostart)
 ```
 
 With the bundled PostgreSQL instead of Docker (portable binaries from the PostgreSQL website, folder

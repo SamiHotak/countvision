@@ -68,7 +68,7 @@ class BackupInfo:
     version: str | None
     revision: str | None
     organization: str | None
-    kind: str  # manual | before-restore | upload
+    kind: str  # manual | before-restore | before-update (the desktop app, before a new version) | upload
 
     def as_dict(self) -> dict[str, Any]:
         return {"name": self.name, "size": self.size, "created_at": self.created_at, "version": self.version,
@@ -153,7 +153,10 @@ def _info(path: Path) -> BackupInfo:
             meta = json.loads(z.read(META))
     except (OSError, KeyError, ValueError, zipfile.BadZipFile):
         pass
-    kind = "before-restore" if path.name.startswith("before-restore") else meta.get("kind", "manual")
+    kind = meta.get("kind", "manual")
+    for automatic in ("before-restore", "before-update"):
+        if path.name.startswith(automatic):
+            kind = automatic
     return BackupInfo(name=path.name, path=path, size=path.stat().st_size, created_at=meta.get("created_at"),
                       version=meta.get("version"), revision=meta.get("revision"),
                       organization=meta.get("organization"), kind=kind)

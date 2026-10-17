@@ -221,6 +221,9 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--password", help="the new password (asked for when left out)")
     bk = sub.add_parser("backup", help="local edition: write a backup file (database + secret key)")
     bk.add_argument("--folder", help="target folder (default: the backup folder)")
+    bk.add_argument("--prefix", default="CountVision-backup", help="start of the file name")
+    bk.add_argument("--kind", default="manual", choices=["manual", "before-update"],
+                    help="before-update: made by the desktop app before a new version updates the database")
     rs = sub.add_parser("restore", help="local edition: replace ALL data with a backup file")
     rs.add_argument("file")
     rs.add_argument("--yes", action="store_true", help="do not ask")
@@ -307,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
         from .local import backup
 
         with db_session() as db:
-            info = backup.create(db, custom=args.folder)
+            info = backup.create(db, custom=args.folder, prefix=args.prefix, kind=args.kind)
         print(f"Backup written: {info.path} ({info.size // 1024} kB)")
     elif args.cmd == "restore":
         from pathlib import Path

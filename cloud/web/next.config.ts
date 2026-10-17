@@ -14,6 +14,9 @@ const securityHeaders = [
 
 const config: NextConfig = {
   output: "standalone",
+  // Trace files from this folder only, so .next/standalone/server.js is at the top (the Windows
+  // installer and the Docker image both copy that folder as it is).
+  outputFileTracingRoot: process.cwd(),
   poweredByHeader: false,
   reactStrictMode: true,
   async rewrites() {

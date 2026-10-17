@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "countvision-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "CountVision Local desktop app: starts the database, the API, the web app and the counting service, and shows CountVision in its own window."
 readme = "README.md"
 requires-python = ">=3.10"

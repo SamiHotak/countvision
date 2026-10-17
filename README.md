@@ -39,7 +39,8 @@ today's chart and CSV download.
 - Phase 4.5: **CountVision Local**, the offline edition for one Windows PC (`CV_EDITION=local`): setup
   wizard, cameras added in the app, licence keys, backups, the live camera picture with the analysis
   drawn on it, and the desktop app ([`desktop/`](desktop/README.md)) that starts everything in its own
-  window. The Windows installer is next.
+  window. One Windows setup (`CountVision-Local-Setup-<version>.exe`, built by GitHub Actions) installs
+  all of it with icons and autostart: [`packaging/windows/`](packaging/windows/README.md).
 
 ## Install on a pilot device (one line)
 
@@ -66,6 +67,7 @@ Docker by hand: [`docker/README.md`](docker/README.md).
 | `docker/` | Docker images (CPU, NVIDIA, Jetson), compose file, test RTSP cameras. |
 | `cloud/` | The SaaS app: `api/` (FastAPI, Postgres/TimescaleDB, Redis, Celery) and `web/` (Next.js). See `cloud/README.md`. |
 | `desktop/` | CountVision Local desktop app: starts database, API, web app and counting service; own window + tray icon. See `desktop/README.md`. |
+| `packaging/windows/` | The Windows setup of CountVision Local: build script, Inno Setup script, CountVision.exe, smoke test. See `packaging/windows/README.md`. |
 | `docs/pilot/` | Pilot pack: install guide, sign, privacy notice, agreement, AVV, DPIA, checklist. |
 | `eval/` | Hand labels, accuracy and speed results, `laptop.bat`, Colab notebook. See `eval/README.md`. |
 | `.github/workflows/` | CI: lint, tests and browser tests on every push (edge, cloud, Docker; CPU only). |

@@ -58,6 +58,22 @@ def repo_root() -> Path | None:
     return root if (root / "cloud" / "web").is_dir() and (root / "edge").is_dir() else None
 
 
+def is_installed(install: Path) -> bool:
+    """The setup.exe layout (``<install>\\web\\server.js`` next to ``<install>\\python``)."""
+    return (install / "web" / "server.js").is_file() and (install / "python").is_dir()
+
+
+def app_version(install: Path) -> str:
+    """The installed version (``<install>\\version.txt``, written by the build), else the package's."""
+    from . import __version__
+
+    try:
+        text = (install / "version.txt").read_text(encoding="utf-8").split()
+    except OSError:
+        text = []
+    return text[0] if text else __version__
+
+
 def default_install_dir() -> Path:
     if env := os.environ.get("CV_INSTALL_DIR"):
         return Path(env)
@@ -162,6 +178,14 @@ class DesktopConfig:
     # -- addresses ----------------------------------------------------------------------------
 
     @property
+    def installed(self) -> bool:
+        return is_installed(self.install_dir)
+
+    @property
+    def version(self) -> str:
+        return app_version(self.install_dir)
+
+    @property
     def manages_postgres(self) -> bool:
         return self.database_url is None
 
@@ -191,6 +215,7 @@ class DesktopConfig:
         """Save the data folder, database, PostgreSQL folder and model in desktop.json, so the
         desktop icon starts CountVision the same way without arguments."""
         extra = self.settings.extra
+        extra["remember_install"] = str(self.install_dir)
         extra["data_dir"] = str(self.data_dir)
         for key, value in (("database_url", self.database_url), ("pg_bin", self.pg_bin), ("model", self.model)):
             if value:
@@ -264,16 +289,26 @@ def _find_model(install: Path, home: Path) -> Path | None:
     return None
 
 
+def remembered(saved: dict[str, Any], install: Path) -> dict[str, Any]:
+    """What ``--remember`` saved, if it belongs to this program folder. The choices saved while
+    testing from the source code (e.g. the Docker database) must not leak into the installed app,
+    which uses its own PostgreSQL and data folder."""
+    owner = saved.get("remember_install")
+    if owner == str(install) or (owner is None and not is_installed(install)):
+        return saved
+    return {}
+
+
 def load(*, home: Path | None = None, install_dir: Path | None = None, data_dir: Path | None = None,
          database_url: str | None = None, pg_bin: Path | None = None, model: Path | None = None) -> DesktopConfig:
     """Find everything. Arguments win over environment variables, which win over what was saved
     with ``--remember`` (desktop.json), which wins over the defaults."""
     home = Path(home) if home else default_home()
-    saved = Settings.load(home / SETTINGS_FILE).extra
+    install = Path(install_dir) if install_dir else default_install_dir()
+    saved = remembered(Settings.load(home / SETTINGS_FILE).extra, install)
     data_dir = data_dir or (Path(saved["data_dir"]) if saved.get("data_dir") else None)
     pg_bin = pg_bin or (Path(saved["pg_bin"]) if saved.get("pg_bin") else None)
     model = model or (Path(saved["model"]) if saved.get("model") else None)
-    install = Path(install_dir) if install_dir else default_install_dir()
     web_dir, web_mode = _find_web(install)
     database_url = database_url or os.environ.get("CV_DESKTOP_DATABASE_URL") or saved.get("database_url") or None
     cfg = DesktopConfig(

@@ -1,6 +1,7 @@
 """Start CountVision Local.
 
     countvision-desktop                     the window (start screen, then the app)
+    countvision-desktop --hidden            only the tray icon (autostart at logon); the window opens from it
     countvision-desktop --no-window         everything in the background, address printed (Ctrl+C stops)
     countvision-desktop --check             show what was found and what is missing, start nothing
     countvision-desktop --quit              stop a running CountVision cleanly
@@ -65,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", type=Path, help="the detector model (yolox_tiny.onnx)")
     parser.add_argument("--install-dir", type=Path, help="program folder (default: found automatically)")
     parser.add_argument("--no-window", action="store_true", help="no window: run in the background")
+    parser.add_argument("--hidden", action="store_true",
+                        help="start in the background with only the tray icon (used by the autostart at logon)")
     parser.add_argument("--window", choices=["auto", "webview", "edge"], default="auto",
                         help="which window to use (default: the native window, else Edge app mode)")
     parser.add_argument("--check", action="store_true", help="show what was found, start nothing")
@@ -101,7 +104,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("CountVision stopped.")
         return 0
-    if ask(cfg.run_dir, "show"):  # already running: bring its window to the front
+    if ask(cfg.run_dir, "ping" if args.hidden else "show"):
+        # already running: bring its window to the front (the autostart leaves a running one alone)
         print("CountVision is already running.")
         return 0
 
@@ -121,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.no_window:
             run_headless(launcher)
         else:
-            run_window(launcher, prefer=args.window)
+            run_window(launcher, prefer=args.window, hidden=args.hidden)
     finally:
         launcher.stop()
         control.stop()

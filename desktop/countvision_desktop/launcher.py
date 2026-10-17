@@ -36,6 +36,8 @@ log = logging.getLogger(__name__)
 
 READY_TIMEOUT_S = 90.0
 CHILDREN_FILE = "children.json"
+VERSION_KEY = "app_version"  # desktop.json: the version that last started (a different one = an update)
+BACKUP_TIMEOUT_S = 1800.0
 
 # Only these variables reach the counting service: it must not see the API's CV_ settings
 # (it reads CV_DATA_DIR, CV_DEVICE_ID, CV_CLOUD_URL ... itself).
@@ -239,7 +241,15 @@ class Launcher:
 
     def _startup(self) -> None:
         cfg = self.cfg
-        cfg.make_dirs()
+        try:
+            cfg.make_dirs()
+            probe = cfg.run_dir / "write-test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except PermissionError as exc:
+            raise StartError(f"CountVision cannot write to its data folder {cfg.home}. It was set up for "
+                             "another Windows user. Log in as that user, or ask the person who installed it "
+                             "to run the setup again while you are logged in.") from exc
         problems = cfg.problems()
         if problems:
             raise StartError(" ".join(problems))
@@ -247,6 +257,7 @@ class Launcher:
         self._check_ports()
 
         self._step("database", "working")
+        had_database = self.pg is not None and self.pg.initialized
         if self.pg is not None:
             try:
                 self.pg.initialize()
@@ -259,6 +270,9 @@ class Launcher:
                 raise StartError(str(exc)) from exc
         self._step("database", "done")
 
+        if had_database and self.update_pending():
+            self._backup_before_update()
+
         self._step("migrate", "working")
         code = run_once([str(cfg.python), "-m", "countvision_cloud.cli", "migrate"], env=self.api_env(),
                         cwd=cfg.data_dir, log_path=cfg.logs_dir / "api.log", timeout=600)
@@ -266,6 +280,7 @@ class Launcher:
             self._step("migrate", "error")
             raise StartError(f"The database could not be updated (exit code {code}). See {cfg.logs_dir / 'api.log'}")
         self._step("migrate", "done")
+        self._remember_version()
 
         for key, service in (("api", self.api), ("web", self.web)):
             if self._stop.is_set():
@@ -280,6 +295,38 @@ class Launcher:
             self._step(key, "done")
         self._step("edge", "waiting", "starts after the first setup" if not cfg.edge_yaml.exists() else "")
         self._check_edge()
+
+    # -- updates -------------------------------------------------------------------------------------
+
+    def update_pending(self) -> bool:
+        """A different version started last time (or none was noted): this start is an update."""
+        return self.cfg.settings.extra.get(VERSION_KEY) != self.cfg.version
+
+    def _backup_before_update(self) -> None:
+        """Before a new version changes the database: a full backup (data/backups/before-update-...).
+        A failed backup stops the start (Try again), so an update never touches data without one."""
+        cfg = self.cfg
+        before = cfg.settings.extra.get(VERSION_KEY) or "an earlier version"
+        if not any(step.key == "backup" for step in self.status.steps):
+            index = next(i for i, step in enumerate(self.status.steps) if step.key == "migrate")
+            self.status.steps.insert(index, Step("backup", "Backup before the update"))
+        self._step("backup", "working", f"{before} -> {cfg.version}")
+        log.info("Update from %s to %s: backup first", before, cfg.version)
+        code = run_once([str(cfg.python), "-m", "countvision_cloud.cli", "backup", "--prefix", "before-update",
+                         "--kind", "before-update"], env=self.api_env(), cwd=cfg.data_dir,
+                        log_path=cfg.logs_dir / "api.log", timeout=BACKUP_TIMEOUT_S)
+        if code != 0:
+            self._step("backup", "error")
+            raise StartError(f"The backup before the update failed (exit code {code}), so the update was not "
+                             f"applied to your data. Is the disk full? See {cfg.logs_dir / 'api.log'}")
+        self._step("backup", "done")
+
+    def _remember_version(self) -> None:
+        settings = self.cfg.settings
+        if settings.extra.get(VERSION_KEY) != self.cfg.version:
+            settings.extra[VERSION_KEY] = self.cfg.version
+            with contextlib.suppress(OSError):
+                settings.save(self.cfg.settings_path)
 
     def _wait(self, check: Callable[[], bool], timeout: float) -> bool:
         deadline = time.monotonic() + timeout
