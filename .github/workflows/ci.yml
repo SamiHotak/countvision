@@ -398,6 +398,7 @@ jobs:
           netsh advfirewall firewall show rule name="CountVision app (shop network)" | Out-Null
           if ($LASTEXITCODE -eq 0) { throw "firewall rule still there" }
           Write-Output "uninstalled, data kept"
+          exit 0  # netsh's "rule not found" (exit 1) above is the expected answer
       - name: Logs
         if: failure()
         run: |

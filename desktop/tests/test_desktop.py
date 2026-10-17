@@ -146,7 +146,9 @@ def test_crashed_service_is_started_again(tmp_path, monkeypatch):
     assert wait_for(lambda: svc.check().state == "crashed")
     assert "exit code 3" in svc.status.detail
     assert wait_for(lambda: svc.check().state == "running")
-    assert svc.status.restarts == 1 and counter.read_text() == "2"
+    # "running" = the process is alive; on a slow Windows machine it may not have written yet
+    assert wait_for(lambda: counter.read_text() == "2")
+    assert svc.status.restarts == 1
     svc.stop(timeout=1)
 
 
