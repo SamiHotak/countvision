@@ -5,6 +5,7 @@
 * Start/stop with ``pg_ctl`` (on Windows it also drops administrator rights, which PostgreSQL
   needs: it refuses to run as an administrator).
 * Listens on 127.0.0.1 only, port 5544, so a PostgreSQL the PC may already have stays untouched.
+  These settings are in ``<db>/countvision.conf`` (included by postgresql.conf, rewritten at every start).
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from .config import PG_DB, PG_USER, DesktopConfig
 from .services import no_window_flags, run_once
 
 log = logging.getLogger(__name__)
+
+SETTINGS_FILE = "countvision.conf"
 
 
 class DatabaseError(RuntimeError):
@@ -99,14 +102,32 @@ class PortablePostgres:
             log.info("PostgreSQL is already running")
             return
         log.info("Starting PostgreSQL on 127.0.0.1:%d", self.port)
+        self.write_settings()
         code = run_once([str(self.cfg.pg_tool("pg_ctl")), "start", "-D", str(self.data), "-w", "-t", "60",
-                         "-l", str(self.cfg.logs_dir / "postgres-server.log"),
-                         "-o", f"-p {self.port} -h 127.0.0.1 -c max_connections=60 -c unix_socket_directories=''"],
+                         "-l", str(self.cfg.logs_dir / "postgres-server.log")],
                         env=self._env(), log_path=self.log_path, timeout=120)
         if code != 0:
             raise DatabaseError(f"PostgreSQL did not start (pg_ctl exit code {code}). See "
                                 f"{self.cfg.logs_dir / 'postgres-server.log'}. Is port {self.port} used by "
                                 "another program?")
+
+    def write_settings(self) -> None:
+        """Our server settings, in a file of their own that postgresql.conf includes. (Not on the
+        pg_ctl command line: on Windows, quotes there reach PostgreSQL literally, so
+        unix_socket_directories='' became the folder "''" and the server did not start.)"""
+        conf = self.data / "postgresql.conf"
+        include = f"include_if_exists = '{SETTINGS_FILE}'"
+        text = conf.read_text(encoding="utf-8")
+        if include not in text:
+            conf.write_text(text.rstrip("\n") + f"\n\n# CountVision Local (written by the desktop app)\n{include}\n",
+                            encoding="utf-8")
+        (self.data / SETTINGS_FILE).write_text(
+            "# Written by CountVision at every start. Changes here are overwritten.\n"
+            "listen_addresses = '127.0.0.1'\n"
+            f"port = {self.port}\n"
+            "max_connections = 60\n"
+            "unix_socket_directories = ''\n",  # TCP on this PC only, no socket files
+            encoding="utf-8")
 
     def ensure_database(self) -> None:
         """Create the "countvision" database once."""
