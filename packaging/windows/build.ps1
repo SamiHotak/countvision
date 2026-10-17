@@ -191,12 +191,18 @@ foreach ($part in @("bin", "lib", "share")) {
     Copy-Item -LiteralPath (Join-Path $pgTmp "pgsql\$part") -Destination (Join-Path $pgDst $part) -Recurse
 }
 # development files and debugging symbols are not needed to run it
-Get-ChildItem -LiteralPath $pgDst -Recurse -File -Include "*.lib", "*.pdb", "*.a" | Remove-Item -Force
+# (Where-Object, not -Include: with -LiteralPath, Windows PowerShell 5.1 ignores -Include and
+#  would delete EVERY file, postgres.exe included)
+Get-ChildItem -LiteralPath $pgDst -Recurse -File |
+    Where-Object { @(".lib", ".pdb", ".a") -contains $_.Extension.ToLower() } | Remove-Item -Force
 foreach ($extra in @("bin\stackbuilder.exe", "bin\pgAdmin4.exe")) {
     $path = Join-Path $pgDst $extra
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
 }
 Remove-Item -LiteralPath $pgTmp -Recurse -Force
+foreach ($tool in @("postgres.exe", "pg_ctl.exe", "initdb.exe", "pg_dump.exe", "pg_restore.exe", "psql.exe", "pg_isready.exe")) {
+    if (-not (Test-Path -LiteralPath (Join-Path $pgDst "bin\$tool"))) { throw "PostgreSQL part missing: bin\$tool" }
+}
 Invoke-Checked "postgres --version" { & (Join-Path $pgDst "bin\postgres.exe") --version }
 
 # --- 5. CountVision.exe -------------------------------------------------------------------------
